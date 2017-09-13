@@ -436,7 +436,7 @@ function varargout = RTBox (varargin)
 % 170626 'buttonNames': bug fix introduced in last update.
 % 170716 Add functionSignatures.json file for tab auto-completion.
 % 170808 Increase warning thre to 0.005 and 0.003 ms for USBoverload.
-% 170904 SyncClocks(): read all once; won't return method3 diff.
+% 170913 SyncClocks(): read all once; won't return method3 diff.
 %        RTBox('clear') default 9 trials.
 
 nIn = nargin; % number of input
@@ -820,7 +820,7 @@ switch cmd
         % if more trials, we use first 10 trials to update ratio, then do
         % the rest using the new ratio
         if nTrial >= 20 && info(id).clkRatio==1
-            t = zeros(10,4);
+            t = zeros(10, 3);
             for i = 1:10
                 t(i,:) = syncClocks(info(id), 10); % update, less trial
                 WaitTill(t0+interval*i, 'esc', 0); % disable esc exit
@@ -829,7 +829,7 @@ switch cmd
             info(id).clkRatio = 1 + linearfit(t(:,1:2)); % update ratio
             i0 = i; % start index for next test
         end
-        t = zeros(nTrial-i0, 4); t0 = GetSecs;
+        t = zeros(nTrial-i0, 3); t0 = GetSecs;
         for i = 1:nTrial-i0
             t(i,:) = syncClocks(info(id), 40); % update info.sync
             WaitTill(t0+interval*i, 'esc', 0);
