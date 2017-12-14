@@ -16,6 +16,7 @@ function RTBoxFirmwareUpdate(hexFileName)
 % 150105 Find version info in hex, rather than file name;
 %        Remove % progress since it has problem with some nojvm mode.
 % 160906 Bug fix cleanup() input when failing to verify.
+% 171012 Use serIO wrapper.
 
 % intel HEX format:
 % :10010000214601360121470136007EFE09D2190140
@@ -75,16 +76,14 @@ v = str2double(hex(ind+(18:20)));
 if v>10, v = v/100; end
 
 % check connected RTBox
-verbo = IOPort('Verbosity', 0); % shut up screen output and error
-clnObj = onCleanup(@()IOPort('Verbosity', verbo));
 [port, vv] = RTBoxPorts(1); % get all ports for boxes 
 if isempty(port)
     err = sprintf(['No working RTBox found. If your box is connected, ' ...
         'please unplug it now. If not, plug it while pressing down buttons 1 and 2.\n\n']);
     fprintf(WrapString(err));
-    ports = FindSerialPorts; nports = numel(ports); % find USB-serial ports
+    ports = FTDIPorts(); nports = numel(ports); % find FTDI ports
     while 1
-        portsNew = FindSerialPorts;
+        portsNew = FTDIPorts();
         if numel(portsNew) < nports % unplugged
             fprintf(' Detected that a port has been unplugged.\n');
             fprintf(' Now plug it while pressing down buttons 1 and 2.\n');
@@ -96,10 +95,10 @@ if isempty(port)
         if ReadKey('esc'), error('User pressed ESC. Exiting ...'); end
     end
     port = setdiff(portsNew, ports); % new-plugged port
-    s = IOPort('OpenSerialPort', port{1}, 'BaudRate=115200');
-    IOPort('Write', s, 'S'); % ask 'AVRBOOT'
+    s = serIO('Open', port{1});
+    serIO('Write', s, 'S'); % ask 'AVRBOOT'
 elseif numel(port)==1 % one RTBox
-    s = IOPort('OpenSerialPort', port{1}, 'BaudRate=115200');
+    s = serIO('Open', port{1});
     if ~isnan(v) % check compatibility if we have version info
         if floor(v) ~= floor(vv) % major version different
             q = questdlg(sprintf(['Hardware and firmware may not be compatible.\n' ...
@@ -108,46 +107,47 @@ elseif numel(port)==1 % one RTBox
             if strcmp(q, 'No'), cleanup(s); return; end
         end
     end
-    IOPort('Write', s, 'x'); % make sure we enter simple mode
-    IOPort('Write', s, 'B'); % jump to boot loader from simple mode
-    IOPort('Write', s, 'S'); % enter boot mode and ask 'AVRBOOT'
+    serIO('Write', s, 'x'); % make sure we enter simple mode
+    serIO('Write', s, 'B'); % jump to boot loader from simple mode
+    serIO('Write', s, 'S'); % enter boot mode and ask 'AVRBOOT'
 else % more than one boxes connected
     error(' More than one RTBoxes found. Please plug only one.');
 end
-idn = IOPort('Read', s, 1, 7); % read boot id
+idn = serIO('Read', s, 7); % read boot id
 if ~strcmp(char(idn), 'AVRBOOT')
     cleanup(s, 'Failed to enter boot loader.');
 end
+serIO('Configure', s, 'ReceiveTimeout=1'); % erease takes longer
 
 % now we are in AVRBOOT, ready to upload firmware HEX
-IOPort('Write', s, 'Tt'); % set device type
+serIO('Write', s, 'Tt'); % set device type
 checkerr(s, 'set device type');
 
 fprintf(' Erasing flash ...');
-IOPort('Write', s, 'e'); % erase
+serIO('Write', s, 'e'); % erase
 checkerr(s, 'erase flash');
 fprintf(' Done\n');
 
-IOPort('Write', s, uint8(['A' strtAddr])); % normally 0x0000
+serIO('Write', s, uint8(['A' strtAddr])); % normally 0x0000
 checkerr(s, 'set address');
 
 fprintf(' Writing flash ...');
 cmd = uint8(['B' 0 bytePL 'F']); % cmd high/low bytes, Flash
 for i = 1:nPage
-    IOPort('Write', s, cmd);
-    IOPort('Write', s, C(i,:)); % write a page
+    serIO('Write', s, cmd);
+    serIO('Write', s, C(i,:)); % write a page
     checkerr(s, sprintf('write flash page %g', i));
 end
 fprintf(' Done\n');
 
-IOPort('Write', s, uint8(['A' strtAddr])); % set start address to verify
+serIO('Write', s, uint8(['A' strtAddr])); % set start address to verify
 checkerr(s, 'set address');
 
 fprintf(' Verifying flash ...');
 cmd = uint8(['g' 0 bytePL 'F']); % cmd high/low bytes, Flash
 for i = 1:nPage
-    IOPort('Write', s, cmd);
-    ln = IOPort('Read', s, 1, bytePL); % read a page back
+    serIO('Write', s, cmd);
+    ln = serIO('Read', s, bytePL); % read a page back
     if numel(ln)<bytePL || ~all(ln==C(i,:))
         cleanup(s, sprintf('Failed to verify page %g. Please try again.',i));
     end
@@ -156,13 +156,13 @@ fprintf(' Done.\n');
 cleanup(s);
 
 function cleanup(s, err)
-IOPort('Write', s, 'R'); % jump to application
-IOPort('Close', s);
+serIO('Write', s, 'R'); % jump to application
+serIO('Close', s);
 if nargin>1, error(err); end
 
 % check returned '\r', close port in case of error
 function checkerr(s, str)
-back = IOPort('Read', s, 1, 1); % read '\r'
+back = serIO('Read', s, 1); % read '\r'
 if isempty(back) || back~=13
     cleanup(s, sprintf('\n Failed to %s.', str));
 end

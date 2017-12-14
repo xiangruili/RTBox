@@ -438,6 +438,10 @@ function varargout = RTBox (varargin)
 % 170808 Increase warning thre to 0.005 and 0.003 ms for USBoverload.
 % 170913 SyncClocks(): read all once; won't return method3 diff.
 %        RTBox('clear') default 9 trials.
+% 171005 writeEEPROM: send [3 2] after data to avoid accidental EEPROM write.
+% 171008 Replace IOPort with serIO syntax, so work for both serFTDI and IOPort.
+% 171009 RTBox('test'): bug fix for boxID.
+% 171214 purgeRTBox(): use latency timer to wait.
 
 nIn = nargin; % number of input
 if nIn>0 && ischar(varargin{nIn}) && strncmpi('device', varargin{nIn}, 6)
@@ -459,7 +463,7 @@ end
 if isempty(in1), in1 = 'secs'; end % default command
 cmd = lower(in1); % make command and trigger case insensitive
 if strcmp(cmd, 'pulse'), cmd = 'sound'; end
-if any(cmd=='?'), subfuncHelp(mfilename, in1); return; end % sub function help
+if any(cmd=='?'), subFuncHelp(mfilename, in1); return; end % sub function help
 
 persistent info; % struct containing device info
 persistent events4enable infoDft; % only to save time
@@ -568,8 +572,8 @@ if new && ~strncmp('close', cmd, 5) % open device unless asked to close
             if any(i)
                 S = S(i);
                 dt = now*24*3600 - GetSecs;
-                [~, ~, ~, tpre] = IOPort('Write', s, 'Y');
-                b7 = IOPort('Read', s, 1, 7);
+                tpre = serIO('Write', s, 'Y');
+                b7 = serIO('Read', s, 7);
                 td = bytes2secs(b7(2:7)', info(id), 1) - S.BoxSecs;
                 drift = abs((tpre+dt-S.secs)/td-1);
                 if drift<0.01, info(id).clkRatio = S.clkRatio; end % retrieve ratio
@@ -597,7 +601,7 @@ end
 read = {'secs' 'boxsecs' 'sound' 'light' 'tr' 'aux'}; % triggers and read cmd
 switch cmd
     case 'eventsavailable'
-        varargout{1} = IOPort('BytesAvailable', s) / 7;
+        varargout{1} = serIO('BytesAvailable', s) / 7;
     case 'ttl' % send TTL
         if isempty(in2), in2 = 1; end % default event code
         if ischar(in2), in2 = bin2dec(in2); end % can be binary string
@@ -606,7 +610,7 @@ switch cmd
             in2 = bin2dec(in2(4:-1:1)); % reverse bit order
         end
         if v>=5, in2 = [1 in2]; end
-        [~, tpost, ~, tpre] = IOPort('Write', s, uint8(in2)); % send
+        [tpre, tpost] = serIO('Write', s, uint8(in2)); % send
 
         maxTTL = 255; if v<5, maxTTL = 15; end
         in2 = in2(end);
@@ -619,7 +623,7 @@ switch cmd
         if v<3, RTBoxWarn('notSupported', in1, 3); return; end
         if twin>0.005, RTBoxWarn('USBoverload', twin); end
     case 'start' % send serial trigger to device
-        [~, tpost, ~, tpre] = IOPort('Write', s, 'Y');
+        [tpre, tpost] = serIO('Write', s, 'Y');
         twin = tpost - tpre;
         if nargout, varargout = {tpre+8.68e-05 twin}; end
         if twin>0.005, RTBoxWarn('USBoverload', twin); end
@@ -632,20 +636,20 @@ switch cmd
             end
             info(id).sync = syncClocks(info(id), in2, 1:6); % sync clocks
         elseif any(info(id).enabled(3:6))
-            enableByte(s, 2.^(0:5)*info(id).enabled', v);
-        else, purgeRTBox(s);
+            enableByte(info(id));
+        else, purgeRTBox(info(id));
         end 
         if nargout, varargout{1} = info(id).sync; end
     case 'clockdiff'
         if isempty(in2), in2 = 20; end % # of sync
         varargout{1} = syncClocks(info(id), in2);
     case 'waittr' % wait for scanner TR, for v3.0 or later
-        enableByte(s, 16, v); % enable only TR
+        enableByte(info(id), 16); % enable only TR
         tr = info(id).events{11};
         while 1
-            if IOPort('BytesAvailable', s) >= 7
+            if serIO('BytesAvailable', s) >= 7
                 if nargout
-                    b7 = IOPort('Read', s, 0, 7);
+                    b7 = serIO('Read', s, 7);
                     t = bytes2secs(b7(2:7)', info(id));
                     info(id).sync = syncClocks(info(id), 9); % new sync
                     t = t + info(id).sync(1);
@@ -656,7 +660,7 @@ switch cmd
             if ~isempty(key), break; end
             WaitSecs('YieldSecs', info(id).latencyTimer);
         end
-        enableByte(s, 2.^(0:5)*info(id).enabled', v); % restore events
+        enableByte(info(id)); % restore events
         if any(strcmp(key, 'esc')), error('User Pressed ESC. Exiting.'); end
         if nargout, varargout{1} = t; end
     case read % 4 trigger events, plus 'secs' 'boxsecs'
@@ -675,10 +679,10 @@ switch cmd
         end
         varargout = {[], ''}; % return empty if no event detected
         isReading = false;
-        nB = IOPort('BytesAvailable', s);
+        nB = serIO('BytesAvailable', s);
         while (tnow<tout && nB<nEventsRead*7 || isReading)
             WaitSecs('YieldSecs', info(id).latencyTimer); % update serial buffer
-            nB1 = IOPort('BytesAvailable', s);
+            nB1 = serIO('BytesAvailable', s);
             isReading = nB1>nB; % wait if reading
             nB = nB1;
             [key, tnow] = ReadKey('esc');
@@ -686,7 +690,7 @@ switch cmd
         end
         nEvent = floor(nB/7);
         if nEvent<nEventsRead, return; end  % return if not enough events
-        b7 = IOPort('Read', s, 0, nEvent*7);
+        b7 = serIO('Read', s, nEvent*7);
         b7 = reshape(b7, [7 nEvent]); % each event contains 7 bytes
         timing = [];
         eventcodes = [49:2:55 50:2:56 97 48 57 98 89]; % code for 13 events
@@ -737,14 +741,14 @@ switch cmd
         varargout = {timing, event};
     case 'purge' % this may be removed in the future. Use RTBox('clear',0)
         if any(info(id).enabled(3:6))
-            enableByte(s, 2.^(0:5)*info(id).enabled', v); % enable trigger if applicable
-        else, purgeRTBox(s); % clear buffer
+            enableByte(info(id)); % enable trigger if applicable
+        else, purgeRTBox(info(id)); % clear buffer
         end
     case 'buttondown'
-        enableByte(s, 0, v); % disable all detection
-        IOPort('Write', s, '?'); % ask button state: '4321'*16 63
-        b2 = IOPort('Read', s, 1, 2); % ? returns 2 bytes
-        enableByte(s, 2.^(0:1)*info(id).enabled(1:2)', v); % enable detection
+        enableByte(info(id), 0); % disable all detection
+        serIO('Write', s, '?'); % ask button state: '4321'*16 63
+        b2 = serIO('Read', s, 2); % ? returns 2 bytes
+        enableByte(info(id), 2.^(0:1)*info(id).enabled(1:2)'); % enable buttons
         if numel(b2)~=2 || ~any(b2==63), RTBoxError('notRespond'); end
         b2 = b2(b2~=63); % '?' is 2nd byte for old version 
         if v>=4.7 || (v>1.9 && v<2)
@@ -763,9 +767,9 @@ switch cmd
     case 'enablestate'
         if v<1.4, RTBoxWarn('notSupported', in1, 1.4); return; end
         for i = 1:4
-            IOPort('Purge', s);
-            IOPort('Write', s, 'E'); % ask enable state
-            b2 = IOPort('Read', s, 1, 2); % return 2 bytes
+            serIO('Read', s);
+            serIO('Write', s, 'E'); % ask enable state
+            b2 = serIO('Read', s, 2); % return 2 bytes
             if numel(b2)==2 && b2(1)=='E', break; end
             if i==4, RTBoxError('notRespond'); end
         end
@@ -802,7 +806,7 @@ switch cmd
             foo = bitset(foo, ind, isEnable);
             info(id).enabled(ind) = isEnable;
         end
-        enableByte(s, foo, v);
+        enableByte(info(id), foo);
         if nargout, varargout{1} = events4enable(info(id).enabled); end
         if all(info(id).enabled(1:2))
             info(id).events(5:8) = strcat(info(id).events(1:4), 'up');
@@ -815,7 +819,7 @@ switch cmd
         interval = 1; % interval between trials
         nTrial = max(10, round(in2/interval)); % # of trials
         fprintf(' Measuring clock ratio. Trials remaining:%4.f', nTrial);
-        enableByte(s, 0, v); % disable all
+        enableByte(info(id), 0); % disable all
         i0 = 0; t0 = GetSecs;
         % if more trials, we use first 10 trials to update ratio, then do
         % the rest using the new ratio
@@ -874,9 +878,9 @@ switch cmd
             infoSave(i).portname = info(id).portname;
             infoSave(i).clkRatio = info(id).clkRatio;
             dt = now*24*3600-GetSecs;
-            [~, ~, ~, tpre] = IOPort('Write', s, 'Y');
+            tpre = serIO('Write', s, 'Y');
             infoSave(i).secs = dt+tpre;
-            b7 = IOPort('Read', s, 1, 7);
+            b7 = serIO('Read', s, 7);
             infoSave(i).BoxSecs = byte2secs(b7(2:7)', 1);
             save(fileName, 'infoSave');
         end
@@ -903,7 +907,7 @@ switch cmd
         if in2>0 && abs(width-in2)/in2>0.1, RTBoxWarn('widthOffset', width); end
         if width==0, width = inf; end
         info(id).TTLWidth = width;
-        purgeRTBox(s);
+        purgeRTBox(info(id));
     case 'ttlresting'
         if nIn<2, varargout{1} = info(id).TTLresting; return; end
         if nargout, varargout{1} = info(id).TTLresting; end
@@ -928,10 +932,10 @@ switch cmd
             return; 
         end
         if v>4 && v<4.4, b8 = get8bytes(s); end % to restore later
-        IOPort('Write', s, 'xBS'); % simple mode, boot, bootID
-        IOPort('Write', s, 'R'); % return, so restart
-        IOPort('Write', s, 'X'); % advanced mode
-        IOPort('Read', s, 1, 7+21); % clear buffer
+        serIO('Write', s, 'xBS'); % simple mode, boot, bootID
+        serIO('Write', s, 'R'); % return, so restart
+        serIO('Write', s, 'X'); % advanced mode
+        serIO('Read', s, 7+21); % clear buffer
         if v>4 && v<4.4, set8bytes(s, b8); end % restore param
         info(id).sync = syncClocks(info(id), 9, 1:2);
     case 'debounceinterval'
@@ -951,7 +955,7 @@ switch cmd
             b8(2) = uint8(in2*921600/1024);
             info(id).debounceInterval = b8(2)*1024/921600;
             set8bytes(s, b8);
-            purgeRTBox(s);
+            purgeRTBox(info(id));
         end
         if nargout, varargout{1} = oldVal; end
     case 'untiltimeout'
@@ -974,9 +978,9 @@ switch cmd
         if nargout, varargout{1} = oldVal; end
         bytes = ceil(in2*7/8)*8 *[1 1];
         str = sprintf('InputBufferSize=%i HardwareBufferSizes=%i,4096', bytes);
-        verbo = IOPort('Verbosity', 0);
-        IOPort('ConfigureSerialPort', s, str);
-        IOPort('Verbosity', verbo);
+        verbo = serIO('Verbosity', 0);  
+        serIO('Configure', s, str);
+        serIO('Verbosity', 0, verbo);
     case 'threshold'
         if nIn<2, varargout{1} = info(id).threshold; return; end
         if nargout, varargout{1} = info(id).threshold; end
@@ -1002,15 +1006,15 @@ switch cmd
         fprintf('%9s%9s-%.4f\n', 'Event', 'secs', t0);
         while isempty(ReadKey('esc'))
             WaitSecs('YieldSecs', 0.02);
-            if IOPort('BytesAvailable', s)<7, continue; end
-            [t, event] = RTBox('boxsecs', 0);
+            if serIO('BytesAvailable', s)<7, continue; end
+            [t, event] = RTBox('boxsecs', 0, boxID);
             event = cellstr(event);
             for i = 1:numel(t)
                 fprintf('%9s%12.4f\n', event{i}, t(i)-t0);
             end
         end
     case 'info'
-        if nargout, varargout{1} = info(id); return; end
+        if nargout, a = info(id); a.cleanObj = []; varargout{1} = a; return; end
         os = '';
         if ispc
             if exist('system_dependent', 'builtin'), os = system_dependent('getos');
@@ -1022,17 +1026,20 @@ switch cmd
             [~, os] = system('lsb_release -a 2>&1');
             os = regexp(os, 'Description:\s*(.*?)\n', 'tokens', 'once');
         end
-        ptbV = IOPort('Version');
-        if isempty(os), os = ptbV.os; elseif iscell(os), os = os{1}; end
+        if iscell(os), os = os{1}; end
+        serV = serIO('Version');
+        drv = which(serV.module); i = strfind(drv, filesep); drv = drv(i(end)+1:end);
+        if exist('OCTAVE_VERSION', 'builtin'), lang = 'Octave'; else, lang = 'Matlab'; end
+
         fprintf(' Computer: %s (%s)\n', computer, strtrim(os));
-        fprintf(' %s: %s\n', ptbV.language, version);
-        fprintf(' IOPort: %s (%s)\n', ptbV.version, ptbV.date);
+        fprintf(' %s: %s\n', lang, version);        
+        fprintf(' %s: %s\n', drv, serV.version);
         fprintf(' RTBox.m last updated on 20%s\n', RTBoxCheckUpdate(mfilename));
         fprintf(' Number of events to wait: %g\n', info(id).nEventsRead);
         fprintf(' Use until-timeout for read: %g\n', info(id).untilTimeout);
         fprintf(' boxID(%g): %s, v%.4g\n', id, info(id).ID, v);
-        fprintf(' Serial port: %s\n', info(id).portname);
-        fprintf(' IOPort handle: %g\n', s);
+        fprintf(' Serial port: %s\n', num2str(info(id).portname)); 
+        fprintf(' Serial handle: %g\n', s);
         fprintf(' Latency Timer: %g\n', info(id).latencyTimer);
         fprintf(' Box clock unit: 1/%.0f = %.3g\n', info(id).clockUnit.^[-1 1]);
         fprintf(' Debounce interval: %g\n', info(id).debounceInterval);
@@ -1047,7 +1054,7 @@ switch cmd
         if v >= 5
             fprintf(' Light/Sound threshold: %g\n', info(id).threshold);
         end
-        fprintf(' Number of events available: %g\n\n', IOPort('BytesAvailable',s)/7);
+        fprintf(' Number of events available: %g\n\n', serIO('BytesAvailable',s)/7);
     case 'close' % close one device
         if ~isempty(info), info(id) = []; end % delete a slot, invoke closeRTBox
     case 'closeall' % close all devices
@@ -1061,49 +1068,49 @@ end
 
 %% synch clock, and enable event (one serial read only)
 function t3 = syncClocks(info, nr, enableInd)
-s = info.handle;
-v = info.version;
-if any(info.enabled), enableByte(s, 0, v); end % disable all
+if any(info.enabled), enableByte(info, 0); else, purgeRTBox(info); end % disable all
 t = zeros(nr, 3); % tpre, tpost, tbox
-IOPort('Purge', s);
 for iTry = 1:4
     for i = 1:nr
         WaitSecs((0.7+rand)/1000); % 0.7 for 7-byte transfer: 10*7/115200
-        [~, t(i,2), ~, t(i,1)] = IOPort('Write', s, 'Y', 1);
+        [t(i,1), t(i,2)] = serIO('Write', info.handle, 'Y');
     end
-    b7 = IOPort('Read', s, 1, 7*nr);
+    b7 = serIO('Read', info.handle, 7*nr);
     if numel(b7)==7*nr && all(b7(1:7:end)==89), break; end
     if iTry==4, RTBoxError('notRespond'); end
-    purgeRTBox(s);
+    purgeRTBox(info);
 end
 b7 = reshape(b7, [7 nr]);
 t(:,3) = bytes2secs(b7(2:7,:), info);
 
 [tdiff, i] = max(t(:,1)-t(:,3)); % the latest tpre is the closest to real write
-twin = t(i,2)-t(i,1); % tpost-tpre for the selected sample: upper bound
+twin = t(i,2) - t(i,1); % tpost-tpre for the selected sample: upper bound
 t3 = [tdiff+8.68e-5 t(i,3) twin]; % tdiff, its tbox and upper bound
 if twin>0.005, RTBoxWarn('USBoverload', twin); end
 if nargin<3, return; end
 foo = 0:5; foo = foo(enableInd); foo = 2.^foo * info.enabled(enableInd)';
-enableByte(s, foo, v); % restore enable
+enableByte(info, foo); % restore enable
 
 %% send enable byte
-function enableByte(s, enByte, v)
+function enableByte(info, enByte)
+s = info.handle;
+v = info.version;
+if nargin<2, enByte = 2.^(0:5)*info.enabled'; end
 enByte = uint8(enByte);
 if v>=4.1 || (v>1.9 && v<2) 
     enByte = [uint8('e') enByte];
     for iTry = 1:4 % try in case of failure
-        purgeRTBox(s); % clear buffer
-        IOPort('Write', s, enByte, 1);
-        if IOPort('Read', s, 1, 1)==101, break; end % 'e' feedback
+        purgeRTBox(info); % clear buffer
+        serIO('Write', s, enByte);
+        if serIO('Read', s, 1)==101, break; end % 'e' feedback
         if iTry==4, RTBoxError('notRespond'); end
     end
 else
     if v>=1.4
         for iTry = 1:4
-            purgeRTBox(s);
-            IOPort('Write', s, 'E');
-            oldByte = IOPort('Read', s, 1, 2);
+            purgeRTBox(info);
+            serIO('Write', s, 'E');
+            oldByte = serIO('Read', s, 2);
             if numel(oldByte)==2 && oldByte(1)==69, break; end % 'E'
             if iTry==4, RTBoxError('notRespond'); end
         end
@@ -1117,26 +1124,27 @@ else
         str = enableCode(i);
         if bitget(enByte, i)==0, str = str+32; end % to lower case
         for iTry = 1:4
-            purgeRTBox(s); % clear buffer
-            IOPort('Write', s, str); % send single char
-            if IOPort('Read', s, 1, 1) == str, break; end % feedback
+            purgeRTBox(info); % clear buffer
+            serIO('Write', s, str); % send single char
+            if serIO('Read', s, 1) == str, break; end % feedback
             if iTry==4, RTBoxError('notRespond'); end
         end
     end
 end
 
 %% purge only when idle, prevent from leaving residual in buffer
-function purgeRTBox(s)
-byte = IOPort('BytesAvailable', s);
+function purgeRTBox(info)
+s = info.handle;
+n = serIO('BytesAvailable', s);
 tout = GetSecs+1; % if longer than 1s, something is wrong
 while 1
-    WaitSecs('YieldSecs', 0.002); % allow buffer update
-    byte1 = IOPort('BytesAvailable', s);
-    if byte1==byte, break; end % not receiving
+    WaitSecs('YieldSecs', info.latencyTimer+0.001); % allow buffer update
+    n1 = serIO('BytesAvailable', s);
+    if n1==n, break; end % not receiving
     if GetSecs>tout, RTBoxError('notRespond'); end
-    byte = byte1;
+    n = n1;
 end
-IOPort('Purge', s);
+serIO('Read', s);
 
 %% convert 6-byte b6 into secs according to time unit of box clock.
 function secs = bytes2secs(b6, info, ratio)
@@ -1145,44 +1153,44 @@ secs = 256.^(5:-1:0) * b6 * info.clockUnit * ratio;
 
 %% needed only for earlier versions
 function b8 = get8bytes(s)
-purgeRTBox(s);
-IOPort('Write', s, 's');
-b8 = IOPort('Read', s, 1, 8);
+serIO('Read', s);
+serIO('Write', s, 's');
+b8 = serIO('Read', s, 8);
 
 %% needed only for earlier versions
 function set8bytes(s, b8)
-IOPort('Write', s, 'S');
-IOPort('Write', s, uint8(b8));
-IOPort('Read', s, 1, 1);
-IOPort('Purge' ,s);
+serIO('Write', s, 'S');
+serIO('Write', s, uint8(b8));
+serIO('Read', s, 1);
 
 %% 
 function b = readEEPROM(s, addr, nBytes)
-IOPort('Purge', s);
-IOPort('Write', s, uint8([17 addr nBytes]));
-b = IOPort('Read', s, 1, nBytes);
+serIO('Read', s);
+serIO('Write', s, uint8([17 addr nBytes]));
+b = serIO('Read', s, nBytes);
 if numel(b)<nBytes, b = readEEPROM(s, addr, nBytes); end
 
 %% 
 function writeEEPROM(s, addr, bytes)
 nBytes = numel(bytes);
-IOPort('Write', s, uint8(16));
-IOPort('Write', s, uint8([addr nBytes]));
-IOPort('Write', s, bytes);
+serIO('Write', s, uint8(16));
+serIO('Write', s, uint8([addr nBytes]));
+serIO('Write', s, bytes);
+serIO('Write', s, uint8([3 2])); % extra 2 useless bytes, ensuring EEPROM write
 
 %% called by onCleanup
 function closeRTBox(s)
 try
-    evalc('IOPort(''Write'', s, ''x'');');
-    IOPort('Close', s);
+    evalc('serIO(''Write'', s, ''x'');');
+    serIO('Close', s);
 end
 
 %% put verbose error message here, to make main code cleaner
 function RTBoxError(err, varargin)
 switch err
     case 'noUSBserial'
-        str = ['No USB-serial ports found. Is your device connected, or driver ' ...
-            'installed from http://www.ftdichip.com/Drivers/VCP.htm? ' ...
+        str = ['No USB-serial ports found. Either device is not connected,' ...
+            'or driver is not installed (see User Manual for driver info). ' ...
             'If you like to test your code without RTBox connected, ' ...
             'check RTBox fake? for more information.'];
     case 'noDevice'
@@ -1283,7 +1291,11 @@ fclose(fid);
 %% return str from cellstr for printing, also remove port path
 function str = cell2str(Cstr)
 if isempty(Cstr), str = ''; return; end
-str = cellstr(Cstr);
+str = Cstr;
+if ischar(str), str = cellstr(str);
+elseif isnumeric(str), str = cellstr(num2str(str));
+elseif isnumeric(str{1}), for i=1:numel(str), str{i}=num2str(str{i}); end
+end
 str = strrep(str, '\\.\', ''); % Windows path for ports
 str = strrep(str, '/dev/', '');  % MAC/Linux path for ports
 str = sprintf('%s, ' ,str{:}); % convert cell into str1, str2,
@@ -1402,45 +1414,4 @@ switch cmd
     otherwise % purge, clockratio etc
         if nargout>1, varargout{1} = 1; end
 end
-
-%% Show help for a function command. This requires that the help text for each
-% command starts with myFunc('cmd') line(s), is followed by a '- ' line, and
-% ends with a blank line.
-function subfuncHelp(mfile, cmd)
-fid = fopen(which(mfile));
-if fid<1, error(' %s not exists.', mfile); end
-str = fread(fid, '*char')';
-fclose(fid);
-i = regexp(str, '\n\s*%', 'once'); % start of 1st % line
-str = regexp(str(i:end), '.*?(?=\n\s*[^%])', 'match', 'once'); % help text
-str = regexprep(str, '\r?\n\s*%', '\n'); % remove '\r' and leading %
-
-dashes = regexp(str, '\n\s*-{1,4}\s+') + 1; % lines starting with 1 to 4 -
-if isempty(dashes), disp(str); return; end % Show all help text
-
-prgrfs = regexp(str, '(\n\s*){2,}'); % blank lines
-nTopic = numel(dashes);
-topics = ones(1, nTopic+1);
-for i = 1:nTopic
-    ind = regexpi(str(1:dashes(i)), [mfile '\s*\(']); % syntax before ' - '
-    if isempty(ind), continue; end % no syntax before ' - ', assume start with 1
-    ind = find(prgrfs < ind(end), 1, 'last'); % previous paragraph
-    if isempty(ind), continue; end
-    topics(i) = prgrfs(ind) + 1; % start of this topic 
-end
-topics(end) = numel(str); % end of last topic
-
-cmd = strrep(cmd, '?', ''); % remove ? in case it is in subcmd
-if isempty(cmd) % help for main function
-    disp(str(1:topics(1))); % subfunction list before first topic
-    return;
-end
-
-expr = [mfile '\s*\(\s*''' cmd ''''];
-for i = 1:nTopic
-    if isempty(regexpi(str(topics(i):dashes(i)), expr, 'once')), continue; end
-    disp(str(topics(i):topics(i+1)));
-    return;
-end
-
-fprintf(2, ' Unknown command for %s: %s\n', mfile, cmd); % no cmd found
+%%

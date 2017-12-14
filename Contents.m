@@ -1,7 +1,12 @@
 % USTC Response Time Box Toolbox
-% Version 2017.04.27
+% Version 2017.12.14
 % 
 %  FindSerialPorts.m        - Return serial port names on computer
+%  ftd2xx.dll               - FTDI D2XX dynamic library for Windows 
+%  FTDIPorts.m              - Return FTDI serial ports for serIO('Open')
+%  functionSignatures.json  - Useuful for tab compeletion under later Matlab
+%  libftd2xx.*              - FTDI D2XX dynamic library for OSX and Linux 
+%  MACAddress_mex.mex*      - Return MAC address for Windows
 %  ReadKey.m                - Read keyborad, called by RTBox etc 
 %  RTBox.m                  - Driver to control USTC RTBox
 %  RTBoxADC.m               - Driver to RTBox as analog-to-digital converter
@@ -23,4 +28,8 @@
 %  RTBoxSimple.m            - Use RTBox in simple mode
 %  RTBoxSimpleDemo.m        - Demo: using RTBox in simple mode
 %  RTBoxSyncTest.m          - Test clock synchronization
+%  serFTDI.m                - Help text for serFTDI mex files
+%  serFTDI.mex*             - serFTDI mex files for different OS
+%  serIO.m                  - Wrapper function to call serFTDI or IOPort
+%  subFuncHelp.m            - Show help text for a sub-command
 %  WaitTill.m               - Wait and read keyboard, called by RTBox etc

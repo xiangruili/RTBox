@@ -9,7 +9,9 @@ classdef RTBoxClass < handle
 % 170422 wrote it based on RTBox.m (xiangrui.li at gmail.com)
 % 170612 bug fix instances(closeAll): use reversed order to close.
 % 170904 SyncClocks(): read all once; won't return method3 diff.
-%        RTBox('clear') default 9 trials.
+%        box.clear() default 9 trials.
+% 171011 use serIO wrapper.
+% 171028 purgeRTBox(): use latency timer to wait.
   
   properties (Hidden); p; end
   properties (Constant, Hidden)
@@ -110,15 +112,15 @@ classdef RTBoxClass < handle
       % local functions called by constructor      
       function closePort(s)
         try %#ok<*TRYNC>
-          evalc('IOPort(''Write'', s, ''x'');'); % simple mode
-          IOPort('Close', s);
+          evalc('serIO(''Write'', s, ''x'');'); % simple mode
+          serIO('Close', s);
         end
       end
       
       function b = readEEPROM(s, addr, nBytes)
-        IOPort('Purge', s);
-        IOPort('Write', s, uint8([17 addr nBytes]));
-        b = IOPort('Read', s, 1, nBytes);
+        serIO('Read', s);
+        serIO('Write', s, uint8([17 addr nBytes]));
+        b = serIO('Read', s, nBytes);
         if numel(b)<nBytes, b = readEEPROM(s, addr, nBytes); end
       end
       
@@ -131,7 +133,7 @@ classdef RTBoxClass < handle
       % call between video frames. Note that the returned nEvents may have a
       % fraction, which normally indicates data is coming in.
       if obj.p.fake, n = numel(ReadKey(obj.p.events(1:4))); return; end
-      n = IOPort('BytesAvailable', obj.p.ser) / 7;
+      n = serIO('BytesAvailable', obj.p.ser) / 7;
     end
     
     function varargout = TTL(obj, eCode)
@@ -146,7 +148,7 @@ classdef RTBoxClass < handle
       if nargin<2 || isempty(eCode), eCode = 1; end % default
       if ischar(eCode), eCode = bin2dec(eCode); end %binary string
       if v>=5, b = [1 eCode]; else, b = eCode; end
-      [~, tpost, ~, tSend] = IOPort('Write', obj.p.ser, uint8(b)); % send
+      [tSend, tpost] = serIO('Write', obj.p.ser, uint8(b)); % send
       
       maxTTL = 255; if v<5, maxTTL = 15; end
       if eCode<0 || eCode>maxTTL || eCode~=round(eCode)
@@ -175,7 +177,7 @@ classdef RTBoxClass < handle
         obj.p.sync = syncClocks(obj, nSyncTrial, 1:6); % sync clocks
       elseif any(obj.p.enabled(3:6))
         enableByte(obj);
-      else, purgeRTBox(obj.p.ser);
+      else, purgeRTBox(obj);
       end
     end
     
@@ -196,9 +198,9 @@ classdef RTBoxClass < handle
       enableByte(obj, 16); % enable only TR
       tr = obj.p.events{11};
       while 1
-        if IOPort('BytesAvailable', s) >= 7
+        if serIO('BytesAvailable', s) >= 7
           if nargout
-            b7 = IOPort('Read', s, 0, 7);
+            b7 = serIO('Read', s, 7);
             t = bytes2secs(b7(2:7)', obj.p.clkRatio);
             obj.p.sync = syncClocks(obj, 10); % new sync
             t = t + obj.p.sync(1);
@@ -287,8 +289,8 @@ classdef RTBoxClass < handle
       s = obj.p.ser;
       v = obj.p.version;
       enableByte(obj, 0); % disable all detection
-      IOPort('Write', s, '?'); % ask button state: '4321'*16 63
-      b2 = IOPort('Read', s, 1, 2); % ? returns 2 bytes
+      serIO('Write', s, '?'); % ask button state: '4321'*16 63
+      b2 = serIO('Read', s, 2); % ? returns 2 bytes
       enableByte(obj, 2.^(0:1)*obj.p.enabled(1:2)'); % enable detection
       if numel(b2)~=2 || ~any(b2==63), RTBoxError('notRespond'); end
       b2 = b2(b2~=63); % '?' is 2nd byte for old version
@@ -307,9 +309,9 @@ classdef RTBoxClass < handle
       % while the state in the Matlab code is still enabled. clear() will enable
       % the detection implicitly. This command is mainly for debug purpose.
       for i = 1:99
-        IOPort('Purge', obj.p.ser);
-        IOPort('Write', obj.p.ser, 'E'); % ask enable state
-        b2 = IOPort('Read', obj.p.ser, 1, 2); % return 2 bytes
+        serIO('Read', obj.p.ser);
+        serIO('Write', obj.p.ser, 'E'); % ask enable state
+        b2 = serIO('Read', obj.p.ser, 2); % return 2 bytes
         if numel(b2)==2 && b2(1)=='E', break; end
         if i==4, RTBoxError('notRespond'); end
       end
@@ -464,10 +466,10 @@ classdef RTBoxClass < handle
     function reset(obj)
       % Restart firmware and reset the device clock to zero (rarely needed).
       s = obj.p.ser;
-      IOPort('Write', s, 'xBS'); % simple mode, boot, bootID
-      IOPort('Write', s, 'R'); % return, so restart
-      IOPort('Write', s, 'X'); % advanced mode
-      IOPort('Read', s, 1, 7+21); % clear buffer
+      serIO('Write', s, 'xBS'); % simple mode, boot, bootID
+      serIO('Write', s, 'R'); % return, so restart
+      serIO('Write', s, 'X'); % advanced mode
+      serIO('Read', s, 7+21); % clear buffer
       obj.p.sync = syncClocks(obj, 10, 1:2);
     end
     
@@ -523,7 +525,7 @@ classdef RTBoxClass < handle
       if obj.p.fake, return; end
       bytes = ceil(nEvents*7/8)*8 *[1 1];
       str = sprintf('InputBufferSize=%i HardwareBufferSizes=%i,4096', bytes);
-      IOPort('ConfigureSerialPort', obj.p.ser, str);
+      serIO('Configure', obj.p.ser, str);
     end
     
     function varargout = TRKey(obj, newKey)
@@ -551,7 +553,7 @@ classdef RTBoxClass < handle
       fprintf('%9s%9s-%.4f\n', 'Event', 'secs', t0);
       while isempty(ReadKey('esc'))
         WaitSecs('YieldSecs', 0.02);
-        if IOPort('BytesAvailable', obj.p.ser)<7, continue; end
+        if serIO('BytesAvailable', obj.p.ser)<7, continue; end
         [t, event] = boxSecs(obj, 0);
         for i = 1:numel(t)
           fprintf('%9s%12.4f\n', event{i}, t(i)-t0);
@@ -569,16 +571,20 @@ classdef RTBoxClass < handle
         else, [~, os] = system('ver 2>&1');
         end
       elseif ismac
-        [~, os] = system('sw_vers -productVersion 2>&1');
+          [~, os] = system('sw_vers -productVersion 2>&1');
       elseif isunix
-        [~, os] = system('lsb_release -a 2>&1');
-        os = regexp(os, '(?<=Description:\s*).*?\n', 'match', 'once');
+          [~, os] = system('lsb_release -a 2>&1');
+          os = regexp(os, 'Description:\s*(.*?)\n', 'tokens', 'once');
       end
-      ptbV = IOPort('Version');
-      if isempty(os), os = ptbV.os; end
+      if iscell(os), os = os{1}; end
+
+      serV = serIO('Version');
+      drv = which(serV.module); i = strfind(drv, filesep); drv = drv(i(end)+1:end);
+      if exist('OCTAVE_VERSION', 'builtin'), lang = 'Octave'; else, lang = 'Matlab'; end
+      
       fprintf(' Computer: %s (%s)\n', computer, strtrim(os));
-      fprintf(' %s: %s\n', ptbV.language, version);
-      fprintf(' IOPort: %s (%s)\n', ptbV.version, ptbV.date);
+      fprintf(' %s: %s\n', lang, version);
+      fprintf(' %s: %s\n', drv, serV.version);
       fprintf(' RTBoxClass.m rev 20%s\n', RTBoxCheckUpdate(mfilename));
       fprintf(' Number of events to wait: %g\n', obj.p.nEventsRead);
       fprintf(' Use until-timeout for read: %g\n', obj.p.untilTimeout);
@@ -588,8 +594,8 @@ classdef RTBoxClass < handle
       end
       v = obj.p.version;
       fprintf(' boxID: %s, firmware v%.4g\n', num2str(obj.p.boxID), v);
-      fprintf(' Serial port: %s\n', obj.p.portname);
-      fprintf(' IOPort handle: %g\n', obj.p.ser);
+      fprintf(' Serial port: %s\n', num2str(obj.p.portname));
+      fprintf(' Serial handle: %g\n', obj.p.ser);
       fprintf(' Latency Timer: %g\n', obj.p.latencyTimer);
       fprintf(' Debounce interval: %g\n', obj.p.debounceInterval);
       fprintf([' MAC address(%i): ' repmat('%02X-',1,5) '%02X\n'], obj.p.MAC);
@@ -619,16 +625,16 @@ classdef RTBoxClass < handle
       s = obj.p.ser;
       if any(obj.p.enabled), enableByte(obj, 0); end % disable all
       t = zeros(nr, 3); % tpre, tpost, tbox
-      IOPort('Purge', s);
+      serIO('Read', s);
       for iTry = 1:4
         for i = 1:nr
           WaitSecs((0.7+rand)/1000); % 0.7 allow 7-byte finish
-          [~, t(i,2), ~, t(i,1)] = IOPort('Write', s, 'Y', 1);
+          [t(i,1), t(i,2)] = serIO('Write', s, 'Y');
         end
-        b7 = IOPort('Read', s, 1, 7*nr);
+        b7 = serIO('Read', s, 7*nr);
         if numel(b7)==7*nr && all(b7(1:7:end)==89), break; end
         if iTry==4, RTBoxError('notRespond'); end
-        purgeRTBox(s);
+        purgeRTBox(obj);
       end
       b7 = reshape(b7, [7 nr]);
       t(:,3) = bytes2secs(b7(2:7,:), obj.p.clkRatio);
@@ -663,10 +669,10 @@ classdef RTBoxClass < handle
         return;
       end
       isReading = false;
-      nB = IOPort('BytesAvailable', obj.p.ser);
+      nB = serIO('BytesAvailable', obj.p.ser);
       while (tnow<tout && nB<nEventsRead*7 || isReading)
         WaitSecs('YieldSecs', obj.p.latencyTimer); % update serial buffer
-        nB1 = IOPort('BytesAvailable', obj.p.ser);
+        nB1 = serIO('BytesAvailable', obj.p.ser);
         isReading = nB1>nB; % wait if reading
         nB = nB1;
         [key, tnow] = ReadKey('esc');
@@ -674,7 +680,7 @@ classdef RTBoxClass < handle
       end
       nEvent = floor(nB/7);
       if nEvent<nEventsRead, return; end  % return if not enough events
-      b7 = IOPort('Read', obj.p.ser, 0, nEvent*7);
+      b7 = serIO('Read', obj.p.ser, nEvent*7);
       b7 = reshape(b7, [7 nEvent]); % each event contains 7 bytes
       eventcodes = [49:2:55 50:2:56 97 48 57 98 89]; % code for 13 events
       for i = 1:nEvent % extract each event and time
@@ -731,9 +737,9 @@ classdef RTBoxClass < handle
       % Send bytes to write into EEPROM at addr
       if obj.p.fake, return; end
       nBytes = numel(bytes);
-      IOPort('Write', obj.p.ser, uint8(16));
-      IOPort('Write', obj.p.ser, uint8([addr nBytes]));
-      IOPort('Write', obj.p.ser, bytes);
+      serIO('Write', obj.p.ser, uint8([16 addr nBytes]));
+      serIO('Write', obj.p.ser, bytes);
+      serIO('Write', obj.p.ser, uint8([3 2])); % extra 2 useless bytes
     end
     
     function enableByte(obj, enByte)
@@ -744,9 +750,9 @@ classdef RTBoxClass < handle
       enByte = uint8(enByte);
       enByte = [uint8('e') enByte];
       for iTry = 1:4 % try in case of failure
-        purgeRTBox(s); % clear buffer
-        IOPort('Write', s, enByte, 1);
-        if IOPort('Read', s, 1, 1)==101, break; end % 'e' feedback
+        purgeRTBox(obj); % clear buffer
+        serIO('Write', s, enByte);
+        if serIO('Read', s, 1)==101, break; end % 'e' feedback
         if iTry==4, RTBoxError('notRespond'); end
       end
     end
@@ -784,10 +790,10 @@ end % End RTBoxClass
 function RTBoxError(err, varargin)
   switch err
     case 'noUSBserial'
-      str = ['No USB-serial ports found. Is your device connected, or driver ' ...
-        'installed from http://www.ftdichip.com/Drivers/VCP.htm? ' ...
-        'If you like to test your code without RTBox connected, ' ...
-        'check RTBox fake? for more information.'];
+        str = ['No USB-serial ports found. Either device is not connected,' ...
+            'or driver is not installed (see User Manual for driver info). ' ...
+            'If you like to test your code without RTBox connected, ' ...
+            'use box = RTBoxClass('''') at fake mode.'];
     case 'noDevice'
       [p, bPorts] = deal(varargin{:});
       if isempty(p.avail) && isempty(p.busy) && isempty(bPorts)
@@ -878,18 +884,18 @@ function RTBoxWarn(err, varargin)
   fclose(fid);
 end
 
-function purgeRTBox(s)
-  % purge only when idle, prevent from leaving residual in buffer
-  byte = IOPort('BytesAvailable', s);
-  tout = GetSecs+1; % if longer than 1s, something is wrong
-  while 1
-    WaitSecs('YieldSecs', 0.002); % allow buffer update
-    byte1 = IOPort('BytesAvailable', s);
-    if byte1==byte, break; end % not receiving
+function purgeRTBox(obj)
+s = obj.p.ser;
+n = serIO('BytesAvailable', s);
+tout = GetSecs+1; % if longer than 1s, something is wrong
+while 1
+    WaitSecs('YieldSecs', obj.p.latencyTimer+0.001); % allow buffer update
+    n1 = serIO('BytesAvailable', s);
+    if n1==n, break; end % not receiving
     if GetSecs>tout, RTBoxError('notRespond'); end
-    byte = byte1;
-  end
-  IOPort('Purge', s);
+    n = n1;
+end
+serIO('Read', s);
 end
 
 function secs = bytes2secs(b6, ratio)
@@ -901,7 +907,11 @@ end
 function str = cell2str(Cstr)
   % return str from cellstr for printing, also remove port path
   if isempty(Cstr), str = ''; return; end
-  str = cellstr(Cstr);
+  str = Cstr;
+  if ischar(str), str = cellstr(str);
+  elseif isnumeric(str), str = cellstr(num2str(str));
+  elseif isnumeric(str{1}), for i=1:numel(str), str{i}=num2str(str{i}); end
+  end
   str = strrep(str, '\\.\', ''); % Windows path for ports
   str = strrep(str, '/dev/', '');  % MAC/Linux path for ports
   str = sprintf('%s, ', str{:}); % convert cell into str1, str2,

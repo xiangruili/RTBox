@@ -9,16 +9,16 @@ function varargout = RTBoxADC (cmd, varargin)
 % controlled acquisition, use other sub-commands as shown in RTBoxADCDemo.m.
 %
 % RTBoxADC('channel', 8);
+% RTBoxADC('channel', 'dif', gain);
 % - Set ADC input channel. For hardware v4.x, it can be 5~8, corresponding to
 % the DB-25 pins 5~8, default 8. For hardware v5 and later, it can be 1~8, where
 % 1~7 correspond to the DA-15 pins 1~7, and 8 is reserved to light sensor.
 %
-% RTBoxADC('channel', 'dif', gain);
-% - Use differential input. The input pins are DB25 8 (positive) and 7
-% (negative) for v5.x. For v3.x and v4.x, these pins are not connected to DB25
-% port. The 3rd input is the gain, which can be 1, 10 or 200.
+% The input 'dif' means differential signal. The input pins are DB25 8
+% (positive) and 7 (negative) for v5.x. For v3.x and v4.x, these pins are not
+% connected to DB25 port. The 3rd input is the gain, which can be 1, 10 or 200.
 %
-% [realRate = ] RTBoxADC('rate', 3600);
+% realRate = RTBoxADC('rate', 3600);
 % - Set sampling rate. Currently, only several rates are acceptable: 3600, 900,
 % 450, 225, 112.5 and 28.125 Hz. If other rate is asked, the closest rate will
 % be used. The real rate will be returned if output is provided.
@@ -38,7 +38,6 @@ function varargout = RTBoxADC (cmd, varargin)
 % serial buffer.
 %
 % [y, t] = RTBoxADC('read');
-
 % - After RTBoxADC('start'), read and return the data, and optionally, the time
 % based on real sampling rate. If no output is provided, it will show result in
 % a figure.
@@ -55,13 +54,16 @@ function varargout = RTBoxADC (cmd, varargin)
 % 141219 bug fix for RTBoxADC ID test
 % 160912 take care of ver for v>1.9 && v<2
 % 170614 bug fix for more than one RTBox case
+% 171118 Make it work for serFTDI
 
-persistent s rate dur ch ver gain isdif vref ADMUX osc port rates byteRatio;
+persistent s port rates ver osc byteRatio tObj bytes;
+persistent rate dur ch gain isdif vref ADMUX;
 if nargin<1, cmd = 'continuous'; end
+if any(cmd=='?'), subFuncHelp('RTBoxADC', cmd); return; end
 if isempty(s)
     if strcmpi(cmd, 'close'), return; end
     dur = 0.1; % default duration
-    rates = 7372800/256./[8 32 64 128 256 1024];
+    rates = 7372800 / 256 ./ [8 32 64 128 256 1024];
     [port, ver] = RTBoxPorts(1); % get all ports for RTboxes
     if isempty(port), error(' No working RTBox found.'); end
     validVer = (ver>=1.8 & ver<3) | ver>=4.2;
@@ -73,41 +75,47 @@ if isempty(s)
             port{1}, ver(1));
     end
     port = port{1}; ver = ver(1);
-    IOPort('Verbosity', 0);
-    s = IOPort('OpenSerialPort', port, 'BaudRate=115200 PollLatency=0');
-    IOPort('Write', s, 'G'); % jump into ADC function
-    b = IOPort('Read', s, 1, 8);
+    s = serIO('Open', port);
+    serIO('Write', s, 'G'); % jump into ADC function
+    b = serIO('Read', s, 8);
     if ~strcmp(char(b), 'RTBoxADC')
-        IOPort('Close', s); s = [];
+        serIO('Close', s); s = [];
         error(' It seems RTBoxADC firmware is not uploaded.');
     end
     if ver<2, vref = 3.3; else, vref = 5; end
     if ver<5, ADMUX = 7; else, ADMUX = 64; end % REFS1 REFS0 =[0 1] for v5
     RTBoxADC('channel', 8); % default channel
     RTBoxADC('rate', 3600); % default sampling rate
-    str = 'InputBufferSize=262140 HardwareBufferSizes=262140,4096';
     
     if ver>=4.5 || (ver>1.9 && ver<2)
         byteRatio = 1.25;
     else
-        str(end) = '2';
         byteRatio = 2;
     end
-    IOPort('ConfigureSerialPort', s, str);
+    tObj = timer('ExecutionMode', 'fixedRate', 'Name', 'RTBoxADC_timer');
     osc.clean = onCleanup(@() closeRTBoxADC(s, port, osc));
 end
 
 switch lower(cmd)
-    case 'start' % put this as the first for better timing
-        IOPort('ConfigureSerialPort', s, 'StartBackgroundRead=5');
-        IOPort('Purge', s);
-        IOPort('Write', s, uint8(2)); % start conversion
+    case 'start'
+        if strcmp(tObj.Running, 'on'), stop(tObj); end
+        bytes = [];
+        serIO('Read', s); % purge
+        serIO('Write', s, uint8(2)); % start conversion
+        set(tObj, 'TimerFcn', 'RTBoxADC(''timerRead'')', 'Period', 0.05);
+        start(tObj);
+    case 'timerread'
+        bytes = [bytes serIO('Read', s)];
     case 'read'
-        n = round(dur*rate);
-        b = IOPort('Read', s,  1, n*byteRatio);
+        n = round(dur*rate/4)*4 * byteRatio;
+        if numel(bytes)<n
+            bytes = [bytes serIO('Read', s, n-numel(bytes))];
+        end
         
-        n = numel(b);
-        v = byte2vol(b, ver, isdif, gain, vref);
+        n = numel(bytes);
+        dp = 5; if byteRatio==2, dp = 2; end
+        n = floor(n/dp) * dp;
+        v = byte2vol(bytes(1:n), byteRatio, isdif, gain, vref);
         
         t = (0:n/byteRatio-1)'/rate;
         if nargout, varargout = {v t};
@@ -115,9 +123,9 @@ switch lower(cmd)
             plot(t, v);
             xlabel('Time (s)'); ylabel('Voltage (V)');
         end
-        IOPort('ConfigureSerialPort', s, 'StopBackgroundRead');
+        stop(tObj);
     case 'channel'
-        if nargin<2, varargout = {ch}; return; end
+        if nargin<2, varargout{1} = ch; return; end
         ch = varargin{1};
         if ischar(ch) % differential
             % ADMUX Channels  Gain
@@ -143,28 +151,29 @@ switch lower(cmd)
             ch1 = ch-1;
         end
         ADMUX = floor(ADMUX/64)*64 + ch1;
-        IOPort('Write', s, uint8([67 ADMUX]));
-        if nargout, varargout = {ch}; end
+        serIO('Write', s, uint8([67 ADMUX]));
+        if nargout, varargout{1} = ch; end
     case 'rate'
-        if nargin<2, varargout = {rate}; return; end
+        if nargin<2, varargout{1} = rate; return; end
         rate = varargin{1};
         [~, iRate] = min(abs(rate-rates));
         if rate ~= rates(iRate)
             rate = rates(iRate);
             warning('RTBoxADC:rate',' Real rate will be %g Hz.', rate);
         end
-        IOPort('Write', s, uint8([70 iRate+1])); % set rate
+        serIO('Write', s, uint8([70 iRate+1])); % set rate
         RTBoxADC('duration', dur)
-        if nargout, varargout = {rate}; end
+        if nargout, varargout{1} = rate; end
     case 'duration'
-        if nargin<2 || nargout, varargout = {dur}; end
+        if nargin<2 || nargout, varargout{1} = dur; end
         if nargin<2, return; end
         dur = varargin{1};
         n = round(dur*rate/4)*4;
+        if n>65535, error('Max points to acquire is 2^16-1'); end
         dur = n/rate;
-        IOPort('Write', s, uint8([110 floor(n/256) mod(n,256)]));
+        serIO('Write', s, uint8([110 floor(n/256) mod(n,256)]));
     case 'vref'
-        if nargin<2 || nargout, varargout = {vref}; end
+        if nargin<2 || nargout, varargout{1} = vref; end
         if nargin<2, return; end
         in2 = varargin{1};
         if (ver<2 && in2~=3.3) || (ver<5 && in2~=5) || ...
@@ -178,7 +187,7 @@ switch lower(cmd)
             else, refSel = 192;
             end
             ADMUX = mod(ADMUX,64) + refSel;
-            IOPort('Write', s, uint8([67 ADMUX]));
+            serIO('Write', s, uint8([67 ADMUX]));
         end
     case 'oneshot'
         RTBoxADC('start');
@@ -187,12 +196,14 @@ switch lower(cmd)
     case 'continuous'
         if nargin>1, in2 = varargin{1}; else, in2 = 'setup'; end
         switch in2
-            case 'update' % called each 0.01 s
-                b = IOPort('Read', s);
-                if isempty(b), IOPort('Write', s, uint8(2)); return; end
-                n = numel(b)/byteRatio;
-                v = byte2vol(b, ver, isdif, gain, vref);
-                ind = (0:n)+osc.i;
+            case 'update' % called by timer
+                bp = 5; if byteRatio==2; bp = 2; end
+                n = serIO('BytesAvailable', s);
+                n = floor(n/bp) * bp;
+                if n==0, serIO('Write', s, uint8(2)); return; end
+                b = serIO('Read', s, n);
+                v = byte2vol(b, byteRatio, isdif, gain, vref);
+                ind = (0:n/byteRatio)+osc.i;
                 ind = mod(ind-1, osc.nP)+1;
                 osc.y(ind) = [v; nan];
                 osc.i = ind(end);
@@ -206,9 +217,9 @@ switch lower(cmd)
                 elseif n<osc.nP, osc.y = [osc.y; nan(osc.nP-n,1)];
                 end
                 set(osc.plot, 'XData', osc.x, 'YData', osc.y);
-                set(osc.axis, 'xlim', osc.x([1 end]));
+                set(get(osc.plot, 'Parent'), 'xlim', osc.x([1 end]));
             case 'channel' % called when changing channel
-                n = get(osc.ch,'Value');
+                n = get(osc.ch, 'Value');
                 if n<=8, RTBoxADC('channel', n);
                 elseif n==9,  RTBoxADC('channel', 'dif', 1);
                 elseif n==10, RTBoxADC('channel', 'dif', 10);
@@ -218,29 +229,25 @@ switch lower(cmd)
                 RTBoxADC('rate', rates(get(osc.rate, 'Value')));
                 RTBoxADC('continuous', 'xmax');
                 intvl = max(0.015, round(4000/rate)/1000);
-                if ~isvalid(osc.timer), return; end
-                intv0 = get(osc.timer, 'Period');
+                if ~isvalid(tObj), return; end
+                intv0 = get(tObj, 'Period');
                 if intvl~=intv0
-                    stop(osc.timer);
-                    set(osc.timer, 'Period', intvl);
-                    IOPort('Purge', s);
-                    start(osc.timer);
+                    stop(tObj);
+                    set(tObj, 'Period', intvl);
+                    serIO('Read', s);
+                    start(tObj);
                 end
             case 'close' % called when closing the figure
-                if isfield(osc,'timer') && isvalid(osc.timer)
-                    stop(osc.timer);
-                    try delete(osc.timer); end %#ok
+                if isvalid(tObj)
+                    stop(tObj);
                     osc = rmfield(osc, 'slider');
                 end
                 osc.clean = []; % evoke closeRTBoxADC 
             case 'stop' % called when Stop/Start button is pressed
-                if ~isfield(osc, 'go'), osc.go=gco; end
+                if ~isfield(osc, 'go'), osc.go = gco; end
                 if strcmp(get(osc.go, 'String'), 'Stop')
-                    IOPort('ConfigureSerialPort', s, 'StopBackgroundRead');
                     set(osc.go, 'String', 'Start', 'BackgroundColor', 'g');
-                    if isvalid(osc.timer)
-                        stop(osc.timer); delete(osc.timer);
-                    end
+                    if isvalid(tObj), stop(tObj); end
                 else
                     set(osc.go, 'String','Stop', 'BackgroundColor', 'r');
                     RTBoxADC('continuous', 'setup'); % start timer
@@ -254,50 +261,49 @@ switch lower(cmd)
                 end
                 hFig = figure(3);
                 
-                if ~isfield(osc,'slider') || isempty(get(osc.slider,'Value'))
+                if ~isfield(osc, 'slider') || isempty(get(osc.slider, 'Value'))
                     set(hFig, 'DeleteFcn', 'RTBoxADC(''continuous'',''close'');', ...
-                        'Position',[40 400 560 420], 'Toolbar','figure');
-                    osc.go=uicontrol('Style', 'pushbutton', 'String', 'Stop',...
-                        'units','normalized ','Position', [0.83 0.93 0.08 0.06], ...
+                        'Toolbar', 'figure');
+                    osc.go = uicontrol('Style', 'pushbutton', 'String', 'Stop',...
+                        'units', 'normalized ', 'Position', [0.83 0.93 0.08 0.06], ...
                         'BackgroundColor', 'r', ...
                         'Callback', 'RTBoxADC(''continuous'',''stop'');');
-                    osc.slider=uicontrol('Style', 'slider', 'Min',0.1,'Max',10, ...
-                        'Value',3, 'SliderStep', [0.01 0.1], ...
-                        'units','normalized ','Position', [0.685 0.93 0.14 0.05], ...
+                    osc.slider = uicontrol('Style', 'slider', 'Min',0.1, 'Max',10, ...
+                        'Value', 3, 'SliderStep', [0.01 0.1], ...
+                        'units', 'normalized ', 'Position', [0.685 0.93 0.14 0.05], ...
                         'Callback', 'RTBoxADC(''continuous'',''xmax'');');
                     uicontrol('Style', 'text', 'String', 'X Range:', ...
-                        'units','normalized ','Position', [0.6 0.93 0.08 0.045]);
-                    if ischar(ch), nCh=find(gain==[1 10 200])+8;
-                    else, nCh=ch;
+                        'units', 'normalized ', 'Position', [0.58 0.93 0.1 0.045]);
+                    if ischar(ch), nCh = find(gain==[1 10 200])+8;
+                    else, nCh = ch;
                     end
-                    if ver<5, chStr='1|2|3|4|5|6|7|8|2-1 x1|2-1 x10|2-1 x200';
-                    else, chStr='1|2|3|4|5|6|7|8|7-8 x1|7-8 x10|7-8 x200';
+                    if ver<5, chStr = '1|2|3|4|5|6|7|8|2-1 x1|2-1 x10|2-1 x200';
+                    else, chStr = '1|2|3|4|5|6|7|8|7-8 x1|7-8 x10|7-8 x200';
                     end
-                    osc.ch=uicontrol('Style', 'popupmenu', 'Value',nCh,...
-                        'String',chStr, ...
-                        'units','normalized ','Position', [0.3 0.92 0.12 0.06], ...
+                    osc.ch = uicontrol('Style', 'popupmenu', 'Value', nCh,...
+                        'String', chStr, ...
+                        'units', 'normalized ', 'Position', [0.3 0.92 0.12 0.06], ...
                         'Callback', 'RTBoxADC(''continuous'',''channel'');');
                     uicontrol('Style', 'text', 'String', 'Channel:', ...
                         'units','normalized ','Position', [0.21 0.93 0.09 0.045]);
-                    osc.rate=uicontrol('Style', 'popupmenu', 'Value',find(rate==rates),...
-                        'String',cellstr(num2str((rates)','%.4g')), ...
-                        'units','normalized ','Position', [0.46 0.92 0.09 0.06], ...
+                    osc.rate = uicontrol('Style', 'popupmenu', 'Value', find(rate==rates),...
+                        'String', cellstr(num2str((rates)', '%.4g')), ...
+                        'units', 'normalized ', 'Position', [0.46 0.92 0.09 0.06], ...
                         'Callback', 'RTBoxADC(''continuous'',''rate'');');
                     uicontrol('Style', 'text', 'String', 'Hz', ...
-                        'units','normalized ','Position', [0.55 0.93 0.03 0.045]);
+                        'units', 'normalized ', 'Position', [0.55 0.93 0.03 0.045]);
                     osc.plot = plot(osc.x, osc.y);
-                    osc.axis = gca;
-                    set(osc.axis,'xgrid','on','ygrid','on','xlim', osc.x([1 end]));
-                    % set(osc.axis, 'ylim',[0 vref]);
+                    set(gca, 'xgrid', 'on', 'ygrid', 'on', 'xlim', osc.x([1 end]));
+                    % set(gca, 'ylim', [0 vref]);
                     xlabel('Time (s)'); ylabel('Voltage (V)');
                 end
                 
+                stop(tObj);
                 intvl = max(0.015, round(4000/rate)/1000);
-                osc.timer = timer('TimerFcn', 'RTBoxADC(''continuous'',''update'');', ...
-                    'Period', intvl, 'ExecutionMode', 'fixedRate');
-                IOPort('Purge', s);
-                IOPort('ConfigureSerialPort', s, 'StartBackgroundRead=5');
-                start(osc.timer);
+                set(tObj, 'TimerFcn', 'RTBoxADC(''continuous'',''update'');', 'Period', intvl);
+                serIO('Read', s);
+                serIO('Write', s, uint8(2));
+                start(tObj);
         end
     case 'close'
         closeRTBoxADC(s, port, osc)
@@ -306,9 +312,9 @@ switch lower(cmd)
         error(' Unknown command.');
 end
 
-% convert data from serial port to voltage
-function vol = byte2vol(byte, ver, isdif, gain, vref)
-if ver>=4.5 || (ver>1.9 && ver<2)
+% convert data from bytes to voltage
+function vol = byte2vol(byte, byteRatio, isdif, gain, vref)
+if byteRatio == 1.25
     np = numel(byte)/5;
     byte = reshape(byte(:), [5 np]);
     vol = bitand(ones(4,1)*byte(5,:), [3 12 48 192]'*ones(1,np));
@@ -326,16 +332,13 @@ end
 vol = vol/1024*vref;
 
 function closeRTBoxADC(s, port, osc)
-if isfield(osc, 'timer') && isvalid(osc.timer)
-    stop(osc.timer); delete(osc.timer);
-end
+tObj = timerfind('Name', 'RTBoxADC_timer');
+if isvalid(tObj), stop(tObj); end
 try %#ok
     set([osc.ch osc.slider osc.rate], 'Enable', 'off');
     set(osc.go, 'String','start', 'BackgroundColor', 'g');
 end
-IOPort('Verbosity', 0);
-s0 = IOPort('OpenSerialPort', port, 'BaudRate=115200');
+[s0, ~] = serIO('Open', port);
 if s0>=0, s = s0; end
-IOPort('ConfigureSerialPort', s, 'StopBackgroundRead');
 % could return to RTBox firmware here
-IOPort('Close', s); % close port
+serIO('Close', s); % close port

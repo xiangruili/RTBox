@@ -24,28 +24,30 @@ switch secs
             % slope is clock ratio, residual is the variation
             n = size(t,1);
             x = t(:,2) - t(1,2); % boxSecs
-            y = (t(:,1) - mean(t(:,1))) * 1000; % GetSecs-boxSecs in ms
-            b = polyfit(x, y, 1);
-            r = y - (x*b(1) + b(2)); % residual
-            rg = max(y)-min(y);
-            se = sqrt(r'*r/(n-2)) / (std(x) * sqrt(n-1));
+            x = x - mean(x);
+            y = (t(:,1) - t(1,1)) * 1000; % GetSecs-boxSecs in ms
+            y = y - mean(y);
+            b = x \ y;
+            r = y - x*b; % residual
+            se = sqrt(r'*r/(n-1) / (x'*x)); % se = sqrt(r'*r/(n-p) / (x'*x))
+            b = abs(b);
 
             h = figure(9); 
             set(h, 'color', 'white', 'userdata', t, 'filename', 'RTBoxSyncTestResult.fig');
-            plot(x, [y r], '.');
+            plot(x-x(1), [y r], '.');
             set(gca, 'box', 'off', 'tickdir', 'out', 'ylim', [-1 1]);
             xlabel('Seconds'); ylabel('Clock diff variation (ms)');
-            if rg>0.1 && abs(b(1)/se)>6 % arbituary T
+            if b>0.001 && b/se>6 % arbituary T
                 text(0.2, 0.2, 'Recommend to run RTBox(''ClockRatio'')', 'Unit', 'normalized');
             end
-            legend({['Before drift removal: ' sprintf('%.2g', rg)]
-                    ['After drift removal: ' sprintf('%.2g', max(r)-min(r))]}, ...
+            legend({['Before drift removal: ' sprintf('%.2g', max(y)-min(y))]
+                     ['After drift removal: ' sprintf('%.2g', max(r)-min(r))]}, ...
                     'location', 'best')
         catch me
             fprintf(2, '%s\n', me.message);
             fprintf('Variation range %.2g | %.2g ms (before | after removing drift)\n', ...
                 max(y)-min(y), max(r)-min(r));
-            if rg>0.1 && abs(b(1)/se)>6
+            if b>0.001 && b/se>6 % arbituary T
                 fprintf('Recommend to run RTBox(''ClockRatio'')');
             end
         end

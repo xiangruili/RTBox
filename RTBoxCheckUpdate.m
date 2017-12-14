@@ -92,11 +92,8 @@ end
 %% Get the last date string in history
 function dStr = reviseDate(mfile)
 if nargin<1, mfile = mfilename; end
-dStr = '170509?';
-fid = fopen(which(mfile));
-if fid<1, return; end
-str = fread(fid, '*char')';
-fclose(fid);
+dStr = '170922?';
+try str = fileread(which(mfile)); catch, return; end
 str = regexp(str, '.*\n% (\d{6}) ', 'tokens', 'once');
 if isempty(str), return; end
 dStr = str{1};

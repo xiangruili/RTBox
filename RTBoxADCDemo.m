@@ -23,7 +23,7 @@ function RTBoxADCDemo(back, newVal)
 if nargin<2 || isempty(newVal), newVal=255; end % target color
 if nargin<1 || isempty(back), back=0; end % background color
 
-[w, res]=Screen('OpenWindow', max(Screen('screens')), back);
+[w, res] = Screen('OpenWindow', max(Screen('screens')), back);
 HideCursor;
 hz = FrameRate(w);
 rect = CenterRect([0 0 100 20], res); % target location
@@ -33,20 +33,21 @@ Screen('Flip', w);
 nFrames = [1 2 3 6];
 dur = max(nFrames)/hz + 0.05; % use the longest duration
 RTBoxADC('duration', dur);
-% RTBoxADC('VRef', 2.56); % optionnal for v5 hardware
+% RTBoxADC('VRef', 2.56); % optionnal for v5+ hardware
 
 WaitSecs(0.2); % allow screen background to stablize
 for i = nFrames
     Screen('FillRect', w, newVal, rect);
     t0 = Screen('Flip', w); % turn on the light bar
 
-    RTBoxADC('start');  % start AD conversion, and return to matlab
+    RTBoxADC('start'); % start AD conversion, and return to matlab
     t1 = Screen('Flip', w, t0+(i-0.5)/hz); % turn off light after i frames 
     WaitSecs(dur-(t1-t0)+0.01); % wait till ADC done 
 
     RTBoxADC('read'); % read and show the result
     if i==nFrames(1), hold all; end % append later plots to figure
 end
+
 legend(cellstr(num2str(nFrames(:))));
 title(sprintf('Light Signal (%g -> %g)', back, newVal));
 hold off;

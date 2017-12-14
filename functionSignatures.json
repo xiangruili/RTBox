@@ -5,5 +5,30 @@
         [
             {"name":"varargin", "kind":"optional", "type":"choices={'clear','ButtonNames','TRKey','ClockRatio','ClockDiff','secs','nEventsRead','EventsAvailable','UntilTimeout','BoxSecs','light','sound','DebounceInterval','enable','disable','EnableState','ButtonDown','TTL','TTLWidth','TTLResting','WaitTR','BufferSize','threshold','test','info','reset','KeyNames','fake','close'}"}
         ]
+},
+
+"RTBoxADC":
+{
+    "inputs":
+        [
+            {"name":"cmd", "kind":"optional", "type":"choices={'Channel','Close','Duration','OneShot','Rate','Read','Start','VRef'}"}
+        ]
+},
+
+"serFTDI":
+{
+    "inputs":
+        [
+            {"name":"cmd", "kind":"required", "type":"choices={'BytesAvailable','Configure','Close','CloseAll','Flush','LatencyTimer','NumberOfPorts','Open','Purge','Read','Verbosity','Version','Write'}"}
+        ]
+},
+
+"serIO":
+{
+    "inputs":
+        [
+            {"name":"cmd", "kind":"required", "type":"choices={'BytesAvailable','Close','CloseAll','Flush','Open','Purge','Read','Verbosity','Version','Write'}"}
+        ]
 }
+
 }
