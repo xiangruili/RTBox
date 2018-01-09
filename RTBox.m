@@ -442,6 +442,7 @@ function varargout = RTBox (varargin)
 % 171008 Replace IOPort with serIO syntax, so work for both serFTDI and IOPort.
 % 171009 RTBox('test'): bug fix for boxID.
 % 171214 purgeRTBox(): use latency timer to wait.
+% 180108 Bug fix for fake mode; Limit nEventsRead.
 
 nIn = nargin; % number of input
 if nIn>0 && ischar(varargin{nIn}) && strncmpi('device', varargin{nIn}, 6)
@@ -489,9 +490,9 @@ else
     v = info(id).version;
 end
 if strcmp('fake', cmd)
-    if isempty(info), info = infoDft; else, info(id) = infoDft; end % add a slot
+    if isempty(info), info = infoDft; end % add a slot
     if isempty(in2), varargout{1} = info(id).fake; return; end
-    info(id) = RTBoxFake('fake', info(id), in2); 
+    info(id) = RTBoxFake('fake', info(id), in2); % set fake to 0 or 1
     if nargout, varargout{1} = info(id).fake; end
     return; 
 end
@@ -505,7 +506,7 @@ if ~new && info(id).fake % fake mode?
     return; 
 end
 
-if new && ~strncmp('close', cmd, 5) % open device unless asked to close
+if (new || isempty(s)) && ~strncmp('close', cmd, 5) % open device unless asked to close
     if isempty(info), bPorts = {};
     else, bPorts = {info.portname}; % ports already open by RTBox
     end
@@ -968,6 +969,9 @@ switch cmd
         oldVal = info(id).nEventsRead;
         if nIn<2, varargout{1} = oldVal; return; end
         if isempty(in2), in2 = 1; end
+        if in2>99
+            error('nEventsRead too big: trials with less events will be invalid'); 
+        end
         info(id).nEventsRead = in2;
         if nargout, varargout{1} = oldVal; end
     case 'buffersize'
