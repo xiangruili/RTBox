@@ -1038,7 +1038,7 @@ switch cmd
         fprintf(' Computer: %s (%s)\n', computer, strtrim(os));
         fprintf(' %s: %s\n', lang, version);        
         fprintf(' %s: %s\n', drv, serV.version);
-        fprintf(' RTBox.m last updated on 20%s\n', RTBoxCheckUpdate(mfilename));
+        fprintf(' RTBox.m last updated on %s\n', RTBoxCheckUpdate());
         fprintf(' Number of events to wait: %g\n', info(id).nEventsRead);
         fprintf(' Use until-timeout for read: %g\n', info(id).untilTimeout);
         fprintf(' boxID(%g): %s, v%.4g\n', id, info(id).ID, v);
