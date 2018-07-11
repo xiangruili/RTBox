@@ -34,6 +34,7 @@ try
     copyfile([tdir '/RTBox-master/*.*'], [pth '/.'], 'f');
     rmdir(tdir, 's');
     fprintf(' RTBox driver updated.\n');
+    cln = onCleanup(@rehash);
 catch me
     fprintf(2, '%s\n', me.message);
     fprintf(2, [' Update failed. Please download driver at\n' ...
@@ -53,5 +54,3 @@ if vHex > v
     if ~strcmp(answer, 'Yes'), return; end
     RTBoxFirmwareUpdate([pth '/doc/' nam]);
 end
-
-rehash;
