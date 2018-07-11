@@ -24,7 +24,7 @@ ports = dir('/dev/ttyUSB*');
 ports = {ports.name};
 for i = numel(ports):-1:1
     ports{i} = ['/dev/' ports{i}];
-    [~, str] = system(['udevadm info -a -n ' ports{i}]);
+    [~, str] = system(['udevadm info -an ' ports{i}]);
     ib = [regexp(str, '\n\n') numel(str)]; % empty line
     no0403 = true;
     for j = regexp(str, '{idProduct}=+"6001"') % likely only 1 block has '6001'
@@ -143,28 +143,16 @@ function out = ftdi_registry(in)
 % 'ftdi' root must be right, and PortName/LatencyTimer are under same folder.
 persistent ports keys;
 if isempty(ports) || (~ischar(in) && in) % refresh port/keys?
-    ports = {}; keys = {};
     ftdi = 'HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\FTDIBUS';
-
     [err, str] = system(['reg.exe query ' ftdi ' /v PortName /s']);
     if err, [~, str] = system(['reg.exe query ' ftdi ' /s']); end % winXP
-    [p, ip] = regexp(str, '\n\s*PortName\s+REG_SZ\s+(COM\d+)', 'tokens', 'start');
-    ib = strfind(str, ftdi);
-    for i = 1:numel(ip)
-        i0 = find(ib<ip(i), 1, 'last');
-        k = regexp(str(ib(i0):ip(i)), '.*(?=\r?\n)', 'match', 'once');
-        if isempty(strfind(k, 'PID_6001')), continue; end %#ok
-        ports{end+1} = p{i}{1}; keys{end+1} = k;    
-    end
-    
-%     [~, str] = system(['reg.exe query ' ftdi]);
-%     str = regexp(strtrim(str), '\r?\n', 'split'); % Octave \r\n, Matlab \n
-%     for i = 1:numel(str)
-%         if isempty(strfind(str{i}, 'PID_6001')), continue; end
-%         key = [str{i} '\0000\Device Parameters']; % hope format stays
-%         p = regquery(key, 'PortName');
-%         if ~isempty(p), ports{end+1} = p; keys{end+1} = key; end
-%     end
+    expr = '\n\s*(HKEY_LOCAL_MACHINE.*?)\r?\n\s*PortName\s+REG_SZ\s+(COM\d+)'; 
+    keys = regexp(str, expr, 'tokens');
+    keys = [keys{:}];
+    ports = keys(2:2:end);
+    keys = keys(1:2:end);
+    ind = cellfun(@(x)isempty(strfind(x, 'PID_6001')), keys); %#ok
+    keys(ind) = []; ports(ind) = [];
 end
 
 if ischar(in), out = keys{strcmp(ports, in)}; % ask for key
@@ -193,7 +181,7 @@ if ispc
     fprintf(fid, 'REGEDIT4\n[%s]\n"LatencyTimer"=dword:%08x\n', key, msecs);
     fclose(fid);
     % change registry, which will fail if not administrator
-    [err, txt] = system('reg.exe import temp.reg 2>&1');
+    [err, txt] = dos('reg.exe import temp.reg 2>&1');
     delete('temp.reg');
     if err
         errmsg = [warnmsg ' ' txt 'You need to start Matlab/Octave by right-clicking'...
@@ -268,22 +256,10 @@ else % linux
     
     port = strrep(port, '/dev/', '');
     param = ['/sys/bus/usb-serial/devices/' port '/latency_timer'];
-    [~, lat] = system(['cat ' param]); % query
-    val = str2double(lat);
+    val = str2double(fileread(param));
     if nargin<2, return; end % query only
     msecs = uint8(msecs);
     if val <= msecs, return; end
     if nargout<2, warning(warnID, 'Fail to get LatencyTimer'); end
 end
-%%
-
-% function [err, out] = system_file(cmd)
-% % The same as [err, out] = system(cmd), but better performance with large out.
-% persistent fname deleteFile
-% if isempty(deleteFile)
-%     fname = [tempdir 'temp_output_junk.txt'];
-%     deleteFile = onCleanup(@() delete(fname)); % delete only when cleared
-% end
-% err = system([cmd ' > "' fname '"']);
-% out = fileread(fname);
 %%
