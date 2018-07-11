@@ -1,5 +1,5 @@
 % USTC Response Time Box Toolbox
-% Version 2017.12.14
+% Version 2018.07.10
 % 
 %  FindSerialPorts.m        - Return serial port names on computer
 %  ftd2xx.dll               - FTDI D2XX dynamic library for Windows 
