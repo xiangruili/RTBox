@@ -31,18 +31,18 @@ try
     fclose(fid);
     tdir = [tempdir 'tmp'];
     unzip(tmp, tdir); delete(tmp);
-    movefile([tdir '/RTBox-master/*.*'], [pth '/.'], 'f');
+    copyfile([tdir '/RTBox-master/*.*'], [pth '/.'], 'f');
     rmdir(tdir, 's');
-    rehash;
     fprintf(' RTBox driver updated.\n');
-catch
-    fprintf(2, [' Update failed. Please download drver at\n' ...
+catch me
+    fprintf(2, '%s\n', me.message);
+    fprintf(2, [' Update failed. Please download driver at\n' ...
                 '  https://github.com/xiangruili/RTBox\n']);
     return;
 end
 
-[~, v] = RTBoxPorts(1);
-if isempty(v), error('No RTBox hardware detected.'); end
+[p, v] = RTBoxPorts(1);
+if isempty(p), error('No RTBox hardware detected.'); end
 v = v(1);
 nam = dir([pth '/doc/RTBOX' num2str(fix(v)) '*.hex']);
 nam = nam(1).name;
@@ -53,3 +53,5 @@ if vHex > v
     if ~strcmp(answer, 'Yes'), return; end
     RTBoxFirmwareUpdate([pth '/doc/' nam]);
 end
+
+rehash;
