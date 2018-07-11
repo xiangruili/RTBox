@@ -21,6 +21,7 @@
 % 08/2012 call ListenChar for exit in case ListenChar(2) was called
 % 04/2013 remove GetChar, CharAvail and ListenChar. One reason is we don't
 %         use fORP USB anymore, and the other is its conflict with KbQueue.
+% 080706 add left/right_alt for Windows (still keep alt=18)
 
 function [key, secs] = ReadKey (KEYS)
 persistent isPTB2;
@@ -114,7 +115,7 @@ switch c
     case {'PCWIN' 'PCWIN64'} % Windows
         kk([1 2 4]) = {'left_mouse' 'right_mouse' 'middle_mouse'}; % PTB 3 not detect mouse
         kk([8 9 12 13 19 27 45 46]) = {'backspace' 'tab' 'clear' 'return' 'pause' 'esc' 'insert' 'delete'};
-        kk([160:163 18 91 92]) = {'left_shift' 'right_shift' 'left_control' 'right_control' 'alt' 'left_menu' 'right_menu'};
+        kk([160:165 18 91 92]) = {'left_shift' 'right_shift' 'left_control' 'right_control' 'left_alt' 'right_alt' 'alt' 'left_menu' 'right_menu'};
         kk([32:40 44]) = {'space' 'pageup' 'pagedown' 'end' 'home' 'left' 'up' 'right' 'down' 'printscreen'};
         kk(48:57) = cellstr(num2str((0:9)'));  
         kk(96:105) = kk(48:57); % 0 to 9
