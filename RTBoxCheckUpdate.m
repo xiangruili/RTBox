@@ -1,100 +1,55 @@
-function varargout = RTBoxCheckUpdate(mfile)
+function varargout = RTBoxCheckUpdate()
 % RTBox_checkUpdate
 %  Check whether new version of driver code and/or firmware are available at
-%  RTBox website, and if so, ask user to update. 
+%  Github website, and if so, ask user to update. 
 % 
 %  This requires internet connection.
 
-% Require following special format/name for the web page:
-%  '(updated mm/dd/yyyy'
-%  'the latest firmware, v1.9, v4.6, v5.1, v... for download'
-%  Firmware hex file must be in format downloads/RTBOX46.hex  
-
 % 160122 Xiangrui Li wrote it
-% 160915 Make it work for different zip names and different website folder.
+% 180710 rewrite for update from github 
 
-if nargin<1, mfile = 'RTBox'; end
-fileDate = {reviseDate(mfile) reviseDate('RTBoxPorts')};
-fileDate = sort(fileDate); fileDate = fileDate{end};
-if nargout, varargout{1} = fileDate; return; end % yymmdd
-fileDate = datenum(fileDate, 'yymmdd');
+pth = mfilename('fullpath');
+pth = fileparts(pth);
+str = fileread(fullfile(pth, 'Contents.m'));
+fileDate = regexp(str, 'Version\s(\d{4}\.\d{2}\.\d{2})', 'tokens', 'once');
+if nargout, varargout{1} = fileDate{1}; return; end
+fileDate = datenum(fileDate{1}, 'yyyy.mm.dd');
 
-str = urlread('http://lobes.osu.edu/rt-box.php');
-ind = strfind(str, ' (updated ');
-if isempty(ind), error('Error in reading RTBox website.'); end
-
-latestStr = str(ind(1)+10:ind(1)+19);
-latestNum = datenum(latestStr, 'mm/dd/yyyy');
-doDriver = fileDate < latestNum;
-
-try
-    i1 = strfind(str, 'the latest firmware, '); i1 = i1(end);
-    i2 = strfind(str(i1:end), 'for download') + i1 - 2;
-    vs = str(i1+20:i2(1));
-    vs = regexp(vs, 'v\d+\.?\d*|-v\d+\.?v\d*|\.?v\d*', 'match');
-    vs = strrep(vs, 'v', '');
-    vn = str2double(vs);
-
-    [p, v] = RTBoxPorts(1);
-    if isempty(p), error('No RTBox hardware detected.');
-    elseif numel(p)>1, v = v(1);
-    end
-    i = floor(vn)==floor(v);
-    vs = vs{i};
-    doFirmware = vn(i)>v;
-catch
-    doFirmware = false;
-end
-
-if ~doDriver && ~doFirmware
-    msgbox('Both RTBox driver and firmware are up to date.', 'Check update');
+str = webread('https://github.com/xiangruili/RTBox/blob/master/Contents.m');
+v = regexp(str, 'Version\s(\d{4}\.\d{2}\.\d{2})', 'tokens', 'once');
+latestNum = datenum(v, 'yyyy.mm.dd');
+if fileDate >= latestNum
+    fprintf(' RTBox driver is up to date.\n');
     return;
 end
 
-if doDriver
-    msg = ['Update RTBox driver to the newer version (' latestStr ')?'];
-    answer = questdlg(msg, 'Update RTBox driver', 'Yes', 'Later', 'Yes');
-    if strcmp(answer, 'Yes')
-        i1 = strfind(str(1:ind), 'href="'); % link to zip file
-        i1 = i1(end) + 6; % start of zip file name
-        i2 = strfind(str(i1:end), '.zip"');
-        i2 = i2(1) + i1 + 2;
-        remoteName = str(i1:i2);
-        
-        zipName = fullfile(tempdir, remoteName);
-        try
-            urlwrite(['http://lobes.osu.edu/' remoteName], zipName);
-            unzip(zipName, fileparts(which(mfile)));
-        catch me
-            errordlg(['Error in updating: ' me.message], mfile);
-            return;
-        end
-        rehash;
-    end
+try    
+    data = webread('https://github.com/xiangruili/RTBox/archive/master.zip');
+    tmp = [tempdir 'RTBox.zip'];
+    fid = fopen(tmp, 'w');
+    fwrite(fid, data, 'uint8');
+    fclose(fid);
+    tdir = [tempdir 'tmp'];
+    unzip(tmp, tdir); delete(tmp);
+    movefile([tdir '/RTBox-master/*.*'], [pth '/.'], 'f');
+    rmdir(tdir, 's');
+    rehash;
+    fprintf(' RTBox driver updated.\n');
+catch
+    fprintf(2, [' Update failed. Please download drver at\n' ...
+                '  https://github.com/xiangruili/RTBox\n']);
+    return;
 end
 
-if doFirmware
-    msg = ['Update RTBox firmware to the newer version (v' vs ')?'];
+[~, v] = RTBoxPorts(1);
+if isempty(v), error('No RTBox hardware detected.'); end
+v = v(1);
+nam = dir([pth '/doc/RTBOX' num2str(fix(v)) '*.hex']);
+nam = nam(1).name;
+vHex = str2double(nam(6:8)) / 100;
+if vHex > v
+    msg = ['Update RTBox firmware to the newer version (v' num2str(vHex) ')?'];
     answer = questdlg(msg, 'Update RTBox firmware', 'Yes', 'Later', 'Yes');
     if ~strcmp(answer, 'Yes'), return; end
-
-    hexFile = ['RTBOX' strrep(vs, '.', '') '.hex'];
-    fname = fullfile(tempdir, hexFile);
-    try
-        urlwrite(['http://lobes.osu.edu/' hexFile], fname);
-    catch me
-        errordlg(['Error in updating: ' me.message], mfile);
-        return;
-    end
-    RTBoxFirmwareUpdate(fname);
+    RTBoxFirmwareUpdate([pth '/doc/' nam]);
 end
-
-%% Get the last date string in history
-function dStr = reviseDate(mfile)
-if nargin<1, mfile = mfilename; end
-dStr = '170922?';
-try str = fileread(which(mfile)); catch, return; end
-str = regexp(str, '.*\n% (\d{6}) ', 'tokens', 'once');
-if isempty(str), return; end
-dStr = str{1};
-%%
