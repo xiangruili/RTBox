@@ -585,7 +585,7 @@ classdef RTBoxClass < handle
       fprintf(' Computer: %s (%s)\n', computer, strtrim(os));
       fprintf(' %s: %s\n', lang, version);
       fprintf(' %s: %s\n', drv, serV.version);
-      fprintf(' RTBoxClass.m rev 20%s\n', RTBoxCheckUpdate(mfilename));
+      fprintf(' RTBoxClass.m rev %s\n', RTBoxCheckUpdate());
       fprintf(' Number of events to wait: %g\n', obj.p.nEventsRead);
       fprintf(' Use until-timeout for read: %g\n', obj.p.untilTimeout);
       if obj.p.fake
