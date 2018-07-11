@@ -126,20 +126,11 @@ try %#ok<*TRYNC> OSX and Linux will return from this block
     if numel(a)==6 && ~all(a==0), mac(:) = a; return; end
 end
 
-try % java approach faster than getmac, mainly for Windows
-    ni = java.net.NetworkInterface.getNetworkInterfaces;
-    while ni.hasMoreElements
-        a = ni.nextElement.getHardwareAddress;
-        if numel(a)==6 && ~all(a==0)
-            mac(:) = typecast(a, 'uint8'); % from int8
-            return; % 1st is likely ethernet adaptor
-        end
-    end
-end
-
 try % system command is slow
     if ispc
-        [err, str] = system('getmac.exe 2>&1');
+        fname = [tempdir 'tempmac.txt'];
+        [err, ~] = system(['ipconfig.exe /all > ' fname]); % faster with file
+        str = fileread(fname); delete(fname);
         expr = '(?<=\s)([0-9A-F]{2}-){5}[0-9A-F]{2}(?=\s)'; % separator -
     else
         [err, str] = system('ifconfig 2>&1');
@@ -151,9 +142,19 @@ try % system command is slow
     if numel(a)==6, mac(:) = a; return; end
 end
 
+try % java approach faster than getmac, mainly for Windows
+    ni = java.net.NetworkInterface.getNetworkInterfaces;
+    while ni.hasMoreElements
+        a = ni.nextElement.getHardwareAddress;
+        if numel(a)==6 && ~all(a==0)
+            mac(:) = typecast(a, 'uint8'); % from int8
+            return; % 1st is likely ethernet adaptor
+        end
+    end
+end
+
 warning('MACAddress:Fail', 'Using last 6 char of hostname as MACAddresss');
 [~, nam] = system('hostname'); nam = strtrim(nam);
 if numel(nam)<6, nam = ['myhost' nam]; end
 mac(:) = nam(end+(-5:0));
 %%
-
