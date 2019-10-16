@@ -1,6 +1,6 @@
 classdef RTBoxClass < handle
 % Control USTC Response Time Box. For principle of the hardware, check the
-% paper at http://lobes.osu.edu/Journals/BRM10.pdf
+% paper at https://link.springer.com/article/10.3758/BRM.42.1.212
 %
 %   doc RTBoxClass % show help of class methods
 %
@@ -567,16 +567,20 @@ classdef RTBoxClass < handle
       % copy and paste the screen output of this command.
       os = '';
       if ispc
-        if exist('system_dependent', 'builtin'), os = system_dependent('getos');
-        else, [~, os] = system('ver 2>&1');
-        end
+          if exist('system_dependent', 'builtin'), os = system_dependent('getos');
+          else, [~, os] = system('ver 2>&1');
+          end
       elseif ismac
           [~, os] = system('sw_vers -productVersion 2>&1');
       elseif isunix
-          [~, os] = system('lsb_release -a 2>&1');
-          os = regexp(os, 'Description:\s*(.*?)\n', 'tokens', 'once');
+          [err, os] = system('lsb_release -a 2>&1');
+          if err
+              [~, os] = system('cat /etc/os-release');
+              os = regexp(os, '(?<=PRETTY_NAME=").*?(?=")', 'match', 'once');
+          else
+              os = regexp(os, '(?<=Description:\s*).*?(?=\n)', 'match', 'once');
+          end
       end
-      if iscell(os), os = os{1}; end
 
       serV = serIO('Version');
       drv = which(serV.module); i = strfind(drv, filesep); drv = drv(i(end)+1:end);
