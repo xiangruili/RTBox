@@ -2,7 +2,7 @@ function varargout = RTBox (varargin)
 % output = RTBox('cmd', para)
 % 
 % Control USTC Response Time Box. For principle of the hardware, check the
-% paper at http://lobes.osu.edu/Journals/BRM10.pdf
+% paper at https://link.springer.com/article/10.3758/BRM.42.1.212
 %  
 % The syntax for RTBox is similar to most functions in Psychtoolbox, i.e., each
 % command for RTBox will perform a certain task. To get help for a command, also
@@ -872,8 +872,8 @@ switch cmd
             fileName = fullfile(prefdir, 'RTBox_infoSave.mat');
             try %#ok<*TRYNC> % load saved info
                 i = 1;
-                load(fileName);
-                i = find(strcmp(info(id).portname, {infoSave.portname})); %#ok
+                load(fileName, 'infoSave');
+                i = find(strcmp(info(id).portname, {infoSave.portname}));
                 if isempty(i), i = numel(infoSave)+1; end
             end
             infoSave(i).portname = info(id).portname;
@@ -1027,10 +1027,15 @@ switch cmd
         elseif ismac
             [~, os] = system('sw_vers -productVersion 2>&1');
         elseif isunix
-            [~, os] = system('lsb_release -a 2>&1');
-            os = regexp(os, 'Description:\s*(.*?)\n', 'tokens', 'once');
+            [err, os] = system('lsb_release -a 2>&1');
+            if err
+                [~, os] = system('cat /etc/os-release');
+                os = regexp(os, '(?<=PRETTY_NAME=").*?(?=")', 'match', 'once');
+            else
+                os = regexp(os, '(?<=Description:\s*).*?(?=\n)', 'match', 'once');
+            end
         end
-        if iscell(os), os = os{1}; end
+
         serV = serIO('Version');
         drv = which(serV.module); i = strfind(drv, filesep); drv = drv(i(end)+1:end);
         if exist('OCTAVE_VERSION', 'builtin'), lang = 'Octave'; else, lang = 'Matlab'; end
@@ -1193,7 +1198,7 @@ end
 function RTBoxError(err, varargin)
 switch err
     case 'noUSBserial'
-        str = ['No USB-serial ports found. Either device is not connected,' ...
+        str = ['No USB-serial ports found. Either device is not connected, ' ...
             'or driver is not installed (see User Manual for driver info). ' ...
             'If you like to test your code without RTBox connected, ' ...
             'check RTBox fake? for more information.'];
