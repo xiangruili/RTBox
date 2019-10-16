@@ -128,3 +128,4 @@ function out = serFTDI(cmd, h, param) %#ok
 
 % 171001 First mex compile (xiangrui.li@gmail.com)
 % 171008 Write this help, also make functionSignatures.json usable
+error('serFTDI mex file missing');
