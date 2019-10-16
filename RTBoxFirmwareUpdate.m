@@ -117,7 +117,7 @@ idn = serIO('Read', s, 7); % read boot id
 if ~strcmp(char(idn), 'AVRBOOT')
     cleanup(s, 'Failed to enter boot loader.');
 end
-serIO('Configure', s, 'ReceiveTimeout=1'); % erease takes longer
+serIO('Configure', s, 'ReceiveTimeout=1'); % erase takes longer
 
 % now we are in AVRBOOT, ready to upload firmware HEX
 serIO('Write', s, 'Tt'); % set device type
