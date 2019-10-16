@@ -6,8 +6,8 @@
 % You need to connect the light sensor to the light port, and attach it to
 % the center of the screen where the light signal will show. 
 % 
-% For hardware of v5.x, the light signal is connected to channel 8, so you
-% don't need any other connection.  
+% For hardware of v5.x and later, the light signal is connected to channel 8, so
+% you don't need any other connection. 
 % 
 % For hardware of v4.x, you need to connect the light signal from the light
 % sensor. Loosen the light sensor connector, and use a wire (better with an
@@ -20,8 +20,8 @@
 % affect anything).
 
 function RTBoxADCDemo(back, newVal)
-if nargin<2 || isempty(newVal), newVal=255; end % target color
-if nargin<1 || isempty(back), back=0; end % background color
+if nargin<2 || isempty(newVal), newVal = 255; end % target color
+if nargin<1 || isempty(back), back = 0; end % background color
 
 [w, res] = Screen('OpenWindow', max(Screen('screens')), back);
 HideCursor;
