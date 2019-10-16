@@ -8,25 +8,36 @@ function varargout = serIO(cmd, varargin)
 % See also: serFTDI, IOPort
 
 % 171008 Write it (Xiangrui.Li at gmail.com)
+% 180902 fix for 64-bit Octave
 
 persistent use_serFTDI clnObj; %#ok
 if isempty(use_serFTDI)
-    try
-        if exist('OCTAVE_VERSION', 'builtin')
-            [pth, nam, ext] = fileparts(which('serFTDI'));
-            if strcmp(ext, '.m') % mex file not found
-                mexNam = fullfile(pth, [nam '.mex']);
-                if ispc,      copyfile([mexNam 'OctaveWin64'], mexNam);
-                elseif ismac, copyfile([mexNam 'OctaveMac64'], mexNam);
-                else,         copyfile([mexNam 'OctaveLnx64'], mexNam);
-                end
-                rehash path;
+    if exist('OCTAVE_VERSION', 'builtin')
+        try
+            serFTDI('Accessible');
+        catch
+            if ismac
+                a = 'OctaveMac64';
+            elseif isunix
+                a = 'OctaveLnx64';
+            elseif ~isempty(strfind(computer, 'x86_64')) %#ok 64-bit
+                a = 'OctaveWin64';
+            else
+                a = 'OctaveWin32';
             end
+            pth = fileparts(which('serIO'));
+            oriName = fullfile(pth, ['serFTDI.mex' a]);
+            try
+                mexNam = fullfile(pth, 'serFTDI.mex');
+                copyfile(oriName, mexNam);
+            catch % in case permission error
+                mexNam = fullfile(pwd, 'serFTDI.mex');
+                copyfile(oriName, mexNam);
+            end
+            rehash path;
         end
-        use_serFTDI = serFTDI('Accessible');
-    catch
-        use_serFTDI = false;
     end
+    use_serFTDI = serFTDI('Accessible');
     if ~use_serFTDI
         verbo = IOPort('Verbosity', 0);
         clnObj = onCleanup(@() IOPort('Verbosity', verbo));
