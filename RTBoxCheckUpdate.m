@@ -1,24 +1,30 @@
 function varargout = RTBoxCheckUpdate()
 % RTBox_checkUpdate
-%  Check whether new version of driver code and/or firmware are available at
-%  Github website, and if so, ask user to update. 
-% 
+%  Check if new version of driver code and firmware are available at Github. 
 %  This requires internet connection.
 
 % 160122 Xiangrui Li wrote it
 % 180710 rewrite for update from github 
 
-pth = mfilename('fullpath');
-pth = fileparts(pth);
-str = fileread(fullfile(pth, 'Contents.m'));
-fileDate = regexp(str, 'Version\s(\d{4}\.\d{2}\.\d{2})', 'tokens', 'once');
-if nargout, varargout{1} = fileDate{1}; return; end
-fileDate = datenum(fileDate{1}, 'yyyy.mm.dd');
+fileDate = getVersion();
+if nargout, varargout{1} = fileDate; return; end
 
-str = webread('https://github.com/xiangruili/RTBox/blob/master/Contents.m');
-v = regexp(str, 'Version\s(\d{4}\.\d{2}\.\d{2})', 'tokens', 'once');
-latestNum = datenum(v, 'yyyy.mm.dd');
-if fileDate >= latestNum
+verLink = 'https://github.com/xiangruili/RTBox/blob/master/README.md';
+try
+    str = webread(verLink);
+catch me
+    try
+        str = urlread(verLink);
+    catch
+        str = sprintf('%s.\n\nPlease download manually.', me.message);
+        errordlg(str, 'Web access error');
+        web('https://github.com/xiangruili/RTBox', '-browser');
+        return;
+    end
+end
+
+gitDate = getVersion(str);
+if datenum(fileDate, 'yyyymmdd') >= datenum(gitDate, 'yyyymmdd')
     fprintf(' RTBox driver is up to date.\n');
     return;
 end
@@ -31,6 +37,7 @@ try
     fclose(fid);
     tdir = [tempdir 'tmp'];
     unzip(tmp, tdir); delete(tmp);
+    pth = fileparts(mfilename('fullpath'));
     copyfile([tdir '/RTBox-master/*.*'], [pth '/.'], 'f');
     rmdir(tdir, 's');
     fprintf(' RTBox driver updated.\n');
@@ -54,3 +61,15 @@ if vHex > v
     if ~strcmp(answer, 'Yes'), return; end
     RTBoxFirmwareUpdate([pth '/doc/' nam]);
 end
+
+%% Ger version in README.md
+function dStr = getVersion(str)
+dStr = '20130101';
+if nargin<1 || isempty(str)
+    pth = fileparts(mfilename('fullpath'));
+    fname = fullfile(pth, 'README.md');
+    if ~exist(fname, 'file'), return; end
+    str = fileread(fullfile(pth, 'README.md'));
+end
+a = regexp(str, 'version\s(\d{4}\.\d{2}\.\d{2})', 'tokens', 'once');
+if ~isempty(a), dStr = a{1}([1:4 6:7 9:10]); end
