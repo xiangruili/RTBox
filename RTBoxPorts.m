@@ -94,8 +94,8 @@ else
         lat = oldVal;
     end
     if oldVal>lat % close/re-open to make change effect
-        IOPort('Close', s);
-        s = IOPort('OpenSerialPort', port, cfgStr);
+        serIO('Close', s);
+        [s, ~] = serIO('Open', port);
     end
     lat = lat / 1000;
 end
