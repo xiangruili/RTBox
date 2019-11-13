@@ -39,7 +39,7 @@ function out = serFTDI(cmd, h, param) %#ok
 % - Return the number of connected FTDI ports. 
 % 
 % haveAccess = serFTDI('Accessible') 
-% - Check if serFTDI can access to the ports. This returns true if there is no
+% - Check if serFTDI can access the ports. This returns true if there is no
 % port, otherwise it tries if the driver can open a port. If it returns false,
 % it is likely due to VCP driver is present under OSX/Linux.
 % 
