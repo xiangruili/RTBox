@@ -11,7 +11,7 @@ function [availPorts, busyPorts] = FindSerialPorts(VCPOnly, availOnly)
 % The first optional input tell whether to return USB-serial ports only
 % (default), or all serial ports. The second optional input tell whether to
 % separate available and busy ports (default), or return all ports. IOPort is
-% not needed if to return all ports.
+% not needed to return all ports.
 % 
 % Example to open a USB-serial port automatically:
 %  ports = FindSerialPorts; % USBserial ports cellstr
@@ -22,8 +22,8 @@ function [availPorts, busyPorts] = FindSerialPorts(VCPOnly, availOnly)
 %      % If more than 1, will open 1st. You can choose another port by:
 %      % ports{1} = ports{2}; % open 2nd instead of 1st
 %      str = strrep(ports, '\\.\', ''); % remove Windows path
-%      str = sprintf(' %s,' ,str{:});
-%      warning(['Multiple ports available: %s\b. The first will be used.'], str);
+%      str = strjoin(str, ', ');
+%      warning(['Multiple ports available: %s. The first will be used.'], str);
 %  end
 %  handle = IOPort('OpenSerialPort', ports{1}); % open 1st in ports
  
