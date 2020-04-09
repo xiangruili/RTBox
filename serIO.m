@@ -5,6 +5,9 @@ function varargout = serIO(cmd, varargin)
 % serFTDI which is used if available. If serFTDI is not available or fails to
 % open a port, IOPort will be used.
 % 
+% TF = serIO('use_serFTDI', true_or_false)
+% - Force to use or not use serFTDI.
+% 
 % See also: serFTDI, IOPort
 
 % 171008 Write it (Xiangrui.Li at gmail.com)
