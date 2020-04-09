@@ -4,9 +4,8 @@ function out = serFTDI(cmd, h, param) %#ok
 % This works like IOPort from PTB, while it uses the ftd2xx driver. The
 % advantages include fast and convenient port mapping and LatencyTimer control.
 % The write function has better timing than Windows WriteFile(). The
-% inconvenience is that the driver is exclusive with VCP driver under OSX and
-% Linux. For now, to use this driver, one must unload or uninstall VCP driver
-% for OSX and Linux.
+% inconvenience is that the driver is exclusive with VCP driver under Linux. For
+% now, to use this driver, one must unload or blacklist VCP driver under Linux.
 % 
 % Under Linux, VCP driver can be unloaded temporarily by:
 %  sudo rmmod ftdi_sio
@@ -20,18 +19,9 @@ function out = serFTDI(cmd, h, param) %#ok
 % with the following content needs to be created with sudo:
 %  SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", MODE="0666"
 % 
-% Under OSX, the temporary way to unload Apple's VCP driver is:
-%  sudo kextunload -b com.apple.driver.AppleUSBFTDI
-% This will be effective until the next reboot or reload VCP driver by:
-%  sudo kextload -b com.apple.driver.AppleUSBFTDI
-% Under OSX, if the VCP driver is not needed, it can be disabled by:
-%  cd /System/Library/Extensions/
-%  sudo mv AppleUSBFTDI.kext AppleUSBFTDI.disabled
-%  sudo touch /System/Library/Extensions
-% If FTDI VCP driver is installed, it may be at following folder:
-%  cd /Library/Extensions
-%  sudo mv FTDIUSBSerialDriver.kext FTDIUSBSerialDriver.disabled
-%  sudo touch /Library/Extensions
+% Under OSX, a simple solution is to download and install the D2xxHelper to
+% prevent the OS from locking out D2XX driver:
+%  https://www.ftdichip.com/Drivers/D2XX/MacOSX/D2xxHelper_v2.0.0.pkg
 % 
 % The following commands are available for serFTDI.
 % 
