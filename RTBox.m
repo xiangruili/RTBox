@@ -48,7 +48,7 @@ function varargout = RTBox (varargin)
 % RTBox('clear', nSyncTrial);
 % 
 % - Clear serial buffer, prepare for receiving response. This also synchronizes
-% the clocks of computer and device, and enables the detection of trigger event
+% the clocks of computer and the box, and enables the detection of trigger event
 % if applicable. This is designed to run right before stimulus onset of each
 % trial.
 % 
@@ -63,7 +63,7 @@ function varargout = RTBox (varargin)
 % 'BoxSecs', you should set nSyncTrial to 0.
 % 
 % Optionally, this command returns a 3-element row vector: the first is the time
-% difference between computer and device clocks; the second is the device time
+% difference between computer and box clocks; the second is the device time
 % when the difference was measured; the third is the upper bound of the
 % difference.
 % 
@@ -76,15 +76,15 @@ function varargout = RTBox (varargin)
 % 
 % [ratio =] RTBox('ClockRatio', seconds);
 % 
-% - Measure the clock ratio of computer/RTBox, and save the ratio into the
-% device (v1.3+) or a file.  The optional second input specifies how long the
-% test will last (default 30 s). If you want to return computer time, it is
-% better to do this once before experiment. The program will automatically use
-% the test result to correct device time.
+% - Measure the clock ratio of computer/box, and save the ratio into the device
+% (v1.3+) or a file.  The optional second input specifies how long the test will
+% last (default 30 s). If you want to return computer time, it is better to do
+% this once before experiment. The program will automatically use the test
+% result to correct device time.
 % 
-% [ratio =] RTBox('ClockDiff', seconds);
+% [dif =] RTBox('ClockDiff', nSyncTrial);
 % 
-% - Return offset between computer/RTBox clock without updating the correction.
+% - Return offset between computer/box clock without updating the correction.
 % 
 % [timing, events] = RTBox('secs', timeout);
 % 
@@ -95,31 +95,31 @@ function varargout = RTBox (varargin)
 % events, the name for a button-up event will be its button name plus 'up', such
 % as '1up', '2up' etc. timing are for each event, using GetSecs timestamp. If
 % there is no event, both output will be empty. If there is one event, the
-% returned 'events' will be string array. If there are more than one events, it
+% returned 'events' will be char array. If there are more than one events, it
 % will be a cell string.
 % 
-% Both input are optional. You can omit 'secs' since it is the default. timeout
-% can have two meanings. By default, timeout is the seconds (default 0.1 s) to
-% wait from the evocation of the command. Sometimes, you may like to wait until
-% a specific time, for example till GetSecs clock reaches TillSecs. Then you can
-% use RTBox(TillSecs-GetSecs), but it is better to set the timeout to until
-% time, so you can simply use RTBox(TillSecs). You do this by
+% Both input are optional. You can omit 'secs' since it is the default cmd.
+% timeout can have two meanings. By default, timeout is the seconds (default 0.1
+% s) to wait from the evocation of the command. Sometimes, you may like to wait
+% until a specific time, for example till GetSecs clock reaches TillSecs. Then
+% you can use RTBox(TillSecs-GetSecs), but it is better to set the timeout to
+% until time, so you can simply use RTBox(TillSecs). You do this by
 % RTBox('UntilTimeout', 1). During timeout wait, you can press ESC to abort your
 % program. RTBox('secs', 0) will take couple of milliseconds to return after
 % several evokes, but this is not guaranteed. If you want to check response
 % between two video frames, use RTBox('EventsAvailable') instead.
 % 
-% This subfunction will return when either time is out, or required events are
+% 'secs' cmd will return when either time is out, or required events are
 % detected. If there are events available in the buffer, this will read back all
 % of them. To set the number of events to wait, use RTBox('nEventsRead', n).
 %
 % [oldValue =] RTBox('nEventsRead', nEvents); 
 % 
 % - Set the number of events (default 1) to wait during read functions. For
-% RTBox('trigger'), this refers to the number of events besides the trigger. If
-% you want the read functions to wait for more events, set nEvents accordingly.
-% Limitation to v1.4 or earlier: the repeated events due to button bouncing are
-% counted as different events.
+% RTBox('lifht') trigger cmd, this refers to the number of events besides the
+% trigger. If you want the read functions to wait for more events, set nEvents
+% accordingly. Limitation to v1.4 or earlier: the repeated events due to button
+% bouncing are counted as different events.
 % 
 % [oldBool =] RTBox('UntilTimeout', newBool); 
 %
@@ -135,12 +135,12 @@ function varargout = RTBox (varargin)
 % functions, the events in the buffer will be untouched after this call. This
 % normally takes <1 ms to return, so it is safe to call between video frames.
 % Note that the returned nEvents may have a fraction, which normally indicates
-% the computer is receiving data.
+% the serial buffer is receiving events.
 % 
 % [timing, events] = RTBox('BoxSecs', timeout);
 % 
 % - This is the same as RTBox('secs'), except that the returned time is based on
-% the box clock, normally the seconds since the device is powered.
+% the box clock, normally the seconds since the box is powered.
 % 
 % [timing, events] = RTBox('light', timeout); 
 % [timing, events] = RTBox('sound', timeout); 
@@ -148,7 +148,7 @@ function varargout = RTBox (varargin)
 % [timing, events] = RTBox('aux', timeout); 
 % 
 % - These are the same as RTBox('secs'), except that the returned time is
-% relative to the provided trigger, 'light', 'sound', 'TR' or ''aux. Since the
+% relative to the provided trigger, 'light', 'sound', 'TR' or 'aux'. Since the
 % timing is relative to the provided trigger, both the trigger timing, which is
 % 0, and the trigger event are omitted in output. Normally the trigger indicates
 % the onset of stimulus, so the returned time will be response time. By default,
@@ -159,10 +159,10 @@ function varargout = RTBox (varargin)
 % 
 % [oldValue =] RTBox('DebounceInterval', intervalSecs); 
 % 
-% - Set/get debounce interval in seconds (default 0.05). RTBox will ignore both
-% button down and up events within intervalSecs window after an event of the
-% same button. intervalSecs=0 will disable debouncing. The debouncing is
-% performed in Matlab code for v1.4 and earlier, and in device firmware for
+% - Set/get button debounce interval in seconds (default 0.05). RTBox will
+% ignore both button down and up events within intervalSecs window after an
+% event of the same button. intervalSecs=0 will disable debouncing. The
+% debouncing is performed in Matlab code for v<1.4 box, and in box firmware for
 % later versions. Note that our debounce schemes won't cause any time delay for
 % button press.
 % 
@@ -183,8 +183,9 @@ function varargout = RTBox (varargin)
 % to detect button release time instead of button press time, you need to enable
 % 'release', and better to disable 'press'. The optional output returns enabled
 % events. If you don't provide any input, it means to query the current enabled
-% events. Note that the device will disable a trigger itself after receiving it.
-% RTBox('clear') will implicitly enable those triggers after self disabling.
+% events. Note that a trigger event will disable the urther detection of itself.
+% RTBox('clear') will implicitly enable the detectino of triggers after self
+% disabling.
 % 
 % enabledEvents = RTBox('EnableState');
 % 
@@ -290,10 +291,10 @@ function varargout = RTBox (varargin)
 % 
 % - Set/get threshold for sound and light trigger. There are four levels (1:4)
 % of the threshold. Default (1) is the lowest. If, for example, the background
-% light is relatively bright and the device detects light trigger at background,
-% you can increase the threshold to a higher level. Note that the device will
-% save the setting till you change it next time. This function is only available
-% for v5+ hardware. The threshold controls the comparator reference voltage. In
+% light is relatively bright and the box detects light trigger at background,
+% you can increase the threshold to a higher level. Note that the box will save
+% the setting till you change it next time. This function is only available for
+% v5+ hardware. The threshold controls the comparator reference voltage. In
 % early versions, it is controlled by a potentiometer inside the box, and one
 % has to open the box to adjust it.
 % 
@@ -311,13 +312,13 @@ function varargout = RTBox (varargin)
 % RTBox('reset'); 
 % 
 % - Reset the device clock to zero. This is automatically called when necessary,
-% so you rarely need this.
+% so you rarely need it.
 % 
 % [isFake =] RTBox('fake', 1);
 % 
 % - This allows you to test your code without a device connected. If you set
-% fake to 1, you code will run without "device not found" error, and you can use
-% keyboard to respond. The time will be from KbCheck. To allow your code works
+% fake to 1, your code will run without "device not found" error, and you can use
+% keyboard to respond. The time will be from KbCheck. To allow your code to work
 % under fake mode, the button names must be supported key names returned by
 % RTBox('KeyNames'). Some commands will be ignored silently at fake mode. It is
 % recommended to run this in the Command Window before you test your code. Then
@@ -343,9 +344,12 @@ function varargout = RTBox (varargin)
 % string as the last input argument for all the RTBox subfunction calls. The
 % string must be in format of 'device*', where * must be a single number or
 % letter. If 'device*' is not provided, it is equivalent to having 'device1'.
+% The object-oriented RTBoxClass is much easier to use with multiple boxes.
 % 
 % RTBox('CloseAll');
 % - Close all RTBox devices.
+% 
+% See Also: RTBoxClass
 
 % History:
 % 03/2008, start to write it. Xiangrui Li
@@ -1387,7 +1391,7 @@ switch cmd
     case 'buttonnames'
         varargout{1} = info.events(1:4);
         if isempty(in2), return; end
-        if numel(in2)~=4 || ~iscellstr(in2), RTBoxError('invalidButtonNames'); end
+        if numel(in2)~=4 || ~iscellstr(in2), RTBoxError('invalidButtonNames'); end %#ok
         info.events(1:8) = [in2 in2];
     case 'trkey'
         varargout{1} = info.events(11);
