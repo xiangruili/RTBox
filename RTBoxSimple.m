@@ -116,10 +116,9 @@ switch cmd
         enableByte(s, 16); % enable only TR
         while 1
             if serIO('BytesAvailable', s), t = GetSecs; break; end
-            [key, t] = ReadKey({'5' 'esc'}); % check key press
-            if any(strcmp(key, '5')), break
-            elseif strcmp(key, 'esc'), error('User Pressed ESC. Exiting.'); 
-            end
+            t = KbEventClass.check('5'); % check key press
+            if ~isempty(t), break; end
+            KbEventClass.esc_exit();
             WaitSecs(0.005); % allow serial buffer updated
         end
         enableByte(s, 2.^(0:5)*info.enabled'); % restore events
@@ -263,25 +262,24 @@ function str = cell2str(Cstr)
     str(end+(-1:0)) = ''; % delete last comma and space
 end
 
-% This will call WaitTill to read keyboard
+% This will call KbEventClass to read keyboard
 function [info, varargout]=RTBoxFake(cmd,info,in2)
-    keys=unique(info.events(1:4));
+    persistent kb
+    keys = unique(info.events(1:4));
+    if isempty(kb), kb = KbEventClass(keys); end
     switch cmd
         case 'eventsavailable'
-            varargout{1}=numel(ReadKey(keys));
+            n = PsychHID('KbQueueFlush', kb.deviceIndex, 0);
+            if ~all(info.enabled(1:2)), n = n/2; end % guess press/release half/half
+            varargout{1} = n;
         case 'read'
-            if isempty(in2), in2=0.1; end
-            if info.untilTimeout, tout=in2;
-            else, tout=GetSecs+in2;
-            end
-            while GetSecs<tout
-                k=ReadKey(keys);
-                if isempty(k), WaitSecs(0.2); continue; 
-                else, varargout={k}; return;
-                end
-            end
+            if isempty(in2), in2 = 0.1; end
+            if info.untilTimeout, in2 = in2-GetSecs; end
+            [~, k] = kb.read(in2);
+            if isempty(t), k = ''; elseif numel(t)==1, k = k{1}; end
+            varargout = {k};
         case 'waittr'
-            [k, varargout{1}]=WaitTill('5'); %#ok<ASGLU>
+            [k, varargout{1}]=KbEventClass.wait('5'); %#ok<ASGLU>
         case 'ttl'
             if nargout>1, varargout={GetSecs 0}; end
         case {'enable' 'disable'}
