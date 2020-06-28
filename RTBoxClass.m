@@ -13,7 +13,7 @@ classdef RTBoxClass < handle
 % 171011 use serIO wrapper.
 % 171028 purgeRTBox(): use latency timer to wait.
   
-  properties (Hidden); p; end
+  properties (Hidden); p; kb; end
   properties (Constant, Hidden)
     events4enable = {'press' 'release' 'sound' 'light' 'tr' 'aux'};
   end
@@ -59,10 +59,10 @@ classdef RTBoxClass < handle
       obj.p = struct('boxID', boxID, 'fake', fake, 'nEventsRead', 1, ...
         'untilTimeout', false, 'buffer', 585, 'latencyTimer', 0.016, ...
         'events', {{'1' '2' '3' '4' '1' '2' '3' '4' 'sound' 'light' '5' 'aux' 'serial'}}, ...
-        'enabled', logical([1 0 0 0 0 0]), 'sync', [], 'clkRatio', 1, ...
+        'enabled', logical([1 0 0 0 0 0]), 'sync', 0, 'clkRatio', 1, ...
         'TTLWidth', 0.00097, 'debounceInterval', 0.05, ...
         'TTLresting', logical([0 1]), 'threshold', 1);
-      if fake, return; end
+      if fake, obj.kb = KbEventClass(obj.p.events(1:4)); return; end
       
       [port, st] = RTBoxPorts(bPorts); % open first available RTBox
       if isempty(port), RTBoxError('noDevice', st, bPorts); end
@@ -132,7 +132,11 @@ classdef RTBoxClass < handle
       % after this call. This normally takes <1 ms to return, so it is safe to
       % call between video frames. Note that the returned nEvents may have a
       % fraction, which normally indicates data is coming in.
-      if obj.p.fake, n = numel(ReadKey(obj.p.events(1:4))); return; end
+      if obj.p.fake
+          n = PsychHID('KbQueueFlush', obj.kb.deviceIndex, 0);
+          if ~all(obj.p.enabled(1:2)), n = n/2; end % guess press/release half/half
+          return;
+      end
       n = serIO('BytesAvailable', obj.p.ser) / 7;
     end
     
@@ -177,8 +181,37 @@ classdef RTBoxClass < handle
         obj.p.sync = syncClocks(obj, nSyncTrial, 1:6); % sync clocks
       elseif any(obj.p.enabled(3:6))
         enableByte(obj);
-      else, purgeRTBox(obj);
+      else, purgeRTBox(obj.p);
       end
+    end
+    
+    function dIn = digitalIn(obj, toReverse)
+      % Return the digital input from pins 1~8 at DA-15 port.
+      %
+      % The pins 1~4 are also connected to button 1~4. All 8 pins are pulled up,
+      % so the original high level means resting state. If the optional input,
+      % toReverse is provided to and is ture, this will return reversed level.
+      %  dIn = box.digitalIn(); % resting will 0xFF
+      %  dIn = box.digitalIn(1); % resting will 0x00
+      if obj.p.fake; dIn = []; return; end
+      if obj.p.version<5
+          RTBoxWarn('notSupported', 'digitalIn', 5);
+          dIn = []; return;
+      end
+      if obj.p.version<5.22 || (obj.p.version>6 && obj.p.version<6.12)
+          RTBoxWarn('updateFirmware');
+          dIn = []; return;
+      end
+      s = obj.p.ser;
+      for iTry = 1:4 % try in case of failure
+        purgeRTBox(obj.p); % clear buffer
+        serIO('Write', s, uint8(8));
+        b = serIO('Read', s, 2);
+        if numel(b)==2 && b(1)==8, break; end
+        if iTry==4, RTBoxError('notRespond'); end
+      end
+      dIn = uint8(b(2));
+      if nargin>1 && toReverse, dIn = 255 - dIn; end
     end
     
     function dt = clockDiff(obj, nSyncTrial)
@@ -193,9 +226,10 @@ classdef RTBoxClass < handle
       % This command enables TR detection, so there is need to do it explicitly.
       % This also detects TR key, 5 for example, so one can simulate TR by
       % keyboard press.
-      if obj.p.fake, [~, t] = WaitTill({'5' '5%'}); return; end
+      if obj.p.fake, t = obj.kb.read(obj.p.events{11}); return; end
       s = obj.p.ser;
       enableByte(obj, 16); % enable only TR
+      clnObj = onCleanup(@()enableByte(obj)); % restore events
       tr = obj.p.events{11};
       while 1
         if serIO('BytesAvailable', s) >= 7
@@ -207,12 +241,11 @@ classdef RTBoxClass < handle
           end
           break;
         end
-        [key, t] = ReadKey({tr 'esc'}); % check key press
-        if ~isempty(key), break; end
-        WaitSecs('YieldSecs', obj.p.latencyTimer);
+        t = KbEventClass.check(tr); % check key press
+        if ~isempty(t), break; end
+        KbEventClass.esc_exit();
+        WaitSecs('YieldSecs', 0.01);
       end
-      enableByte(obj); % restore events
-      if any(strcmp('esc', key)), error('User Pressed ESC. Exiting.'); end
     end
     
     function [timing, event] = secs(obj, tout)
@@ -341,7 +374,7 @@ classdef RTBoxClass < handle
       if nargout, varargout{1} = oldNames; end
     end
     
-    function varargout = enable(obj, events)
+    function varargout = enable(obj, evnts)
       % This enables the detection of named events.
       % The events to enable can be one or more these strings: 'press' 'release'
       % 'sound' 'pulse' 'light' 'TR' or 'aux'. The string 'all' is a shortcut for
@@ -350,15 +383,15 @@ classdef RTBoxClass < handle
       % the device will disable a trigger itself after receiving it. clear() will
       % implicitly enable those triggers after self disabling.
       if nargin<2, varargout{1} = obj.events4enable(obj.p.enabled);return; end
-      if nargout, varargout{1} = enable_disable(obj, events, true);
-      else, enable_disable(obj, events, true); end
+      if nargout, varargout{1} = enable_disable(obj, evnts, true);
+      else, enable_disable(obj, evnts, true); end
     end
     
-    function varargout = disable(obj, events)
+    function varargout = disable(obj, evnts)
       % This disables the named events, opposite to enable()
       if nargin<2, varargout{1} = obj.events4enable(obj.p.enabled);return, end
-      if nargout, varargout{1} = enable_disable(obj, events, false);
-      else, enable_disable(obj, events, false); end
+      if nargout, varargout{1} = enable_disable(obj, evnts, false);
+      else, enable_disable(obj, evnts, false); end
     end
     
     function varargout = clockRatio(obj, secsTest)
@@ -376,7 +409,7 @@ classdef RTBoxClass < handle
       t = zeros(nTrial,3); t0 = GetSecs;
       for i = 1:nTrial
         t(i,:) = syncClocks(obj, 40); % update info.sync
-        WaitTill(t0+interval*i, 'esc', 0);
+        KbEventClass.wait(t0+interval*i);
         fprintf('\b\b\b\b%4d', nTrial-i);
       end
       fprintf('\n');
@@ -551,10 +584,14 @@ classdef RTBoxClass < handle
       t0 = GetSecs - obj.p.sync(1);
       fprintf(' Waiting for events. Press ESC to stop.\n');
       fprintf('%9s%9s-%.4f\n', 'Event', 'secs', t0);
-      while isempty(ReadKey('esc'))
+      while 1
         WaitSecs('YieldSecs', 0.02);
-        if serIO('BytesAvailable', obj.p.ser)<7, continue; end
-        [t, event] = boxSecs(obj, 0);
+        try [t, event] = boxSecs(obj);
+        catch me
+            if strncmpi(me.message, 'User pressed ESC', 16), break;
+            else, rethrow(me);
+            end
+        end
         for i = 1:numel(t)
           fprintf('%9s%12.4f\n', event{i}, t(i)-t0);
         end
@@ -638,7 +675,7 @@ classdef RTBoxClass < handle
         b7 = serIO('Read', s, 7*nr);
         if numel(b7)==7*nr && all(b7(1:7:end)==89), break; end
         if iTry==4, RTBoxError('notRespond'); end
-        purgeRTBox(obj);
+        purgeRTBox(obj.p);
       end
       b7 = reshape(b7, [7 nr]);
       t(:,3) = bytes2secs(b7(2:7,:), obj.p.clkRatio);
@@ -668,8 +705,9 @@ classdef RTBoxClass < handle
       varargout = {[], {}}; % return empty if no event detected
       timing = []; event = {};
       if obj.p.fake
-        [event, timing] = WaitTill(tout, unique(obj.p.events(1:4)));
-        if ~isempty(event), varargout = {timing, cellstr(event)}; end
+        keys = unique(obj.p.events(1:4));
+        if ~all(ismember(keys, obj.kb.keyName)), obj.kb.keyName = keys; end
+        [varargout{:}] = obj.kb.read(tout-tnow, keys);
         return;
       end
       isReading = false;
@@ -679,8 +717,7 @@ classdef RTBoxClass < handle
         nB1 = serIO('BytesAvailable', obj.p.ser);
         isReading = nB1>nB; % wait if reading
         nB = nB1;
-        [key, tnow] = ReadKey('esc');
-        if ~isempty(key), RTBoxError('escPressed'); end
+        tnow = KbEventClass.esc_exit();
       end
       nEvent = floor(nB/7);
       if nEvent<nEventsRead, return; end  % return if not enough events
@@ -754,7 +791,7 @@ classdef RTBoxClass < handle
       enByte = uint8(enByte);
       enByte = [uint8('e') enByte];
       for iTry = 1:4 % try in case of failure
-        purgeRTBox(obj); % clear buffer
+        purgeRTBox(obj.p); % clear buffer
         serIO('Write', s, enByte);
         if serIO('Read', s, 1)==101, break; end % 'e' feedback
         if iTry==4, RTBoxError('notRespond'); end
@@ -763,6 +800,7 @@ classdef RTBoxClass < handle
     
     % Override inherited methods from handle, except isvalid, make it hidden
     function lh = addlistener(varargin); lh=addlistener@handle(varargin{:}); end
+    function lh = listener(varargin); lh=listener@handle(varargin{:}); end
     function p = findprop(varargin); p = findprop@handle(varargin{:}); end
     function lh = findobj(varargin); lh = findobj@handle(varargin{:}); end
     function TF = eq(varargin); TF = eq@handle(varargin{:}); end
@@ -779,14 +817,7 @@ classdef RTBoxClass < handle
     function keyName()
       % Show the name of pressed key on keyboard.
       % The name can be used for buttonNames() and TRKey()
-      allKeys = ReadKey('KeyNames');
-      fprintf(' Press a key on keyboard to show its name. ESC to stop.\n')
-      while 1
-        KbReleaseWait;
-        k = WaitTill(allKeys);
-        disp(k)
-        if strcmp(k, 'esc'), break; end
-      end
+      KbEventClass.getName
     end
   end
 end % End RTBoxClass
@@ -873,7 +904,7 @@ function RTBoxWarn(err, varargin)
     case 'ratioBigSE'
       str = sprintf('The slope SE is large: %2g. Try longer time for ClockRatio.',varargin{1});
     case 'notSupported'
-      str = sprintf('The command %s is supported only for v%.1f or later.',varargin{1:2});
+      str = sprintf('function %s is supported only for v%.1f or later.',varargin{1:2});
     case 'updateFirmware'
       str = 'Please run RTBoxCheckUpdate to update RTBox firmware.';
     otherwise
@@ -888,12 +919,12 @@ function RTBoxWarn(err, varargin)
   fclose(fid);
 end
 
-function purgeRTBox(obj)
-s = obj.p.ser;
+function purgeRTBox(p)
+s = p.ser;
 n = serIO('BytesAvailable', s);
 tout = GetSecs+1; % if longer than 1s, something is wrong
 while 1
-    WaitSecs('YieldSecs', obj.p.latencyTimer+0.001); % allow buffer update
+    WaitSecs(p.latencyTimer+0.001); % allow buffer update
     n1 = serIO('BytesAvailable', s);
     if n1==n, break; end % not receiving
     if GetSecs>tout, RTBoxError('notRespond'); end
