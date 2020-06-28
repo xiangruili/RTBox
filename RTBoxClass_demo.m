@@ -61,7 +61,7 @@ Screen('FrameOval', w, 140, rect); % circle
 vbl = Screen('Flip', w); %#ok turn off instruction, show circle
 
 for i = 1:nTrials
-    if record(i,2), angl = dAngle; else angl = -dAngle; end % in deg
+    if record(i,2), angl = dAngle; else, angl = -dAngle; end % in deg
     Screen('DrawTexture', w, tex, [], rect, angl); % draw to buffer
     Screen('FrameOval', w, 140, rect); % circle
     
