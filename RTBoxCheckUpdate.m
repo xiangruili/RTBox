@@ -64,7 +64,7 @@ end
 
 %% Ger version in README.md
 function dStr = getVersion(str)
-dStr = '20130101';
+dStr = '20200408';
 if nargin<1 || isempty(str)
     pth = fileparts(mfilename('fullpath'));
     fname = fullfile(pth, 'README.md');
