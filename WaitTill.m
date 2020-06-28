@@ -1,3 +1,4 @@
+function varargout = WaitTill (varargin)
 % [key, secs] = WaitTill (tillSecs);
 % - Wait till GetSecs clock reaches tillSecs. It is similar to
 % WaitSecs('UntilTime', tillSecs), but optionally, it returns the first
@@ -44,13 +45,12 @@
 % xl, 10/2010, use WaitSecs('YieldSecs',0.001) for all systems and fORP is
 %               removed since it is not needed anymore
 
-function varargout = WaitTill (varargin)
 switch nargin
     case 0, help(mfilename); return;
     case 1
         if isnumeric(varargin{1})
             tillSecs = varargin{1}; 
-            keys = ''; 
+            keys = KbEventClass.getName('KeyNames'); 
             keyReturn = 0;
         else
             tillSecs = inf; 
