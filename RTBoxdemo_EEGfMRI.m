@@ -91,7 +91,7 @@ vbl=Screen('Flip', w);  %#ok turn off instruction
 startSecs = (0:nTrials)*trialDur + t0+lagg; % start secs of each trial
 startSecs = startSecs + rand(1,nTrials+1)*0.2; % small jitter for MRI+EEG
 stimDur = (round(stimDur/ifi)-0.5)*ifi; % half refresh interval shorter
-WaitTill(startSecs(1)-0.5); % wait till time of first trial
+KbEventClass.wait(startSecs(1)-0.5); % wait till time of first trial
 
 for i = 1:nTrials
     cond = record(i,2);
@@ -99,7 +99,7 @@ for i = 1:nTrials
     Screen('DrawTexture', w, tex(cond), [], rect, angl); % draw to buffer
     Screen('DrawingFinished', w);
     
-    WaitTill(startSecs(i)-0.5);  % wait till trial start time
+    KbEventClass.wait(startSecs(i)-0.5); % wait till trial start time
     RTBox('clear');   % clear right before stimulus onset
     vbl = Screen('Flip', w, startSecs(i));  % show stim, return onset time
     t_onset = RTBox('TTL', 1); % mark stim onset in EEG, should be very close to vbl
@@ -136,7 +136,7 @@ for i = 1:nTrials
     Screen('Flip', w);
 end
 
-WaitTill(startSecs(nTrials)+lagg); % wait till lead out
+KbEventClass.wait(startSecs(nTrials)+lagg); % wait till lead out
 Priority(0);      % restore normal priority
 
 % save myresult record t0 lagg trialDur randSeed;  % save a MAT file
