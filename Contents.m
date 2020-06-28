@@ -4,9 +4,10 @@
 %  ftd2xx.dll               - FTDI D2XX dynamic library for Windows 
 %  FTDIPorts.m              - Return FTDI serial ports for serIO('Open')
 %  functionSignatures.json  - Useuful for tab compeletion under later Matlab
+%  KbEventClass.m           - Basice keyboard function, called by RTBox.m etc
 %  libftd2xx.*              - FTDI D2XX dynamic library for OSX and Linux 
 %  MACAddress_mex.mex*      - Return MAC address for Windows
-%  ReadKey.m                - Read keyborad, called by RTBox etc 
+%  ReadKey.m                - Obsolete, use KbEventClass instead
 %  RTBox.m                  - Driver to control USTC RTBox
 %  RTBoxADC.m               - Driver to RTBox as analog-to-digital converter
 %  RTBoxADCDemo.m           - Demo: use RTBoxADC to measure light signal
@@ -31,4 +32,4 @@
 %  serFTDI.mex*             - serFTDI mex files for different OS
 %  serIO.m                  - Wrapper function to call serFTDI or IOPort
 %  subFuncHelp.m            - Show help text for a sub-command
-%  WaitTill.m               - Wait and read keyboard, called by RTBox etc
+%  WaitTill.m               - Obsolete, use KbEventClass instead
