@@ -31,6 +31,7 @@ function varargout = RTBox (varargin)
 % timeSent = RTBox('TTL', eventCode);
 % RTBox('TTLWidth', widthSecs);
 % RTBox('TTLResting', [0 1]);
+% dIn = RTBox('digitalIn'); 
 % timing = RTBox('WaitTR');
 % bufferSz = RTBox('BufferSize', newSize);
 % thre = RTBox('threshold', newThre);
@@ -264,9 +265,16 @@ function varargout = RTBox (varargin)
 % opened. Since v4.4, the setting is saved even after the power is lost.
 % 
 % In v>=5, newLevel has second value, which is the polarity for pins 17~24.
+%
+% dIn = RTBox('digitalIn' [, toReverse]); 
 % 
+% - Return the digital input from  pins 1~8 at DA-15 port.
+% The pins 1~4 are also connected to button 1~4. All 8 pins are pulled up,
+% so the original high level means resting state. If the optional input,
+% toReverse is provided to and is ture, this will return reversed level.
+%
 % [timing =] RTBox('WaitTR');
-% 
+%
 % - Wait for TR, and optionally return accurate TR time based on computer clock.
 % This command will enable TR detection automatically, so you do not need to do
 % it in your code. This also detects TR key, 5 for example, so you can simulate
@@ -317,14 +325,15 @@ function varargout = RTBox (varargin)
 % [isFake =] RTBox('fake', 1);
 % 
 % - This allows you to test your code without a device connected. If you set
-% fake to 1, your code will run without "device not found" error, and you can use
-% keyboard to respond. The time will be from KbCheck. To allow your code to work
-% under fake mode, the button names must be supported key names returned by
-% RTBox('KeyNames'). Some commands will be ignored silently at fake mode. It is
-% recommended to run this in the Command Window before you test your code. Then
-% you can simply 'clear all' to exit fake mode. If you want to use keyboard for
-% experiment, you can insert RTBox('fake', 1) in your code before any RTBox
-% call. Then if you want to switch to response box, remember to change 1 to 0.
+% fake to 1, your code will run without "device not found" error, and you can
+% use keyboard to respond. The time will be from KbEventClass. To allow your
+% code to work under fake mode, the button names must be supported key names
+% returned by RTBox('KeyNames'). Some commands will be ignored silently at fake
+% mode. It is recommended to run this in the Command Window before you test your
+% code. Then you can simply 'clear all' to exit fake mode. If you want to use
+% keyboard for experiment, you can insert RTBox('fake', 1) in your code before
+% any RTBox call. Then if you want to switch to response box, remember to change
+% 1 to 0.
 % 
 % keys = RTBox('KeyNames');
 % 
@@ -501,12 +510,7 @@ if strcmp('fake', cmd)
     return; 
 end
 if ~new && info(id).fake % fake mode?
-    if nargout==0
-        info(id) = RTBoxFake(cmd, info(id), in2);
-    else
-        [foo, varargout{1:nargout}] = RTBoxFake(cmd, info(id), in2);
-        info(id) = foo; % Strange: this solves the slow problem for some MAC
-    end
+    [info(id), varargout{1:nargout}] = RTBoxFake(cmd, info(id), in2);
     return; 
 end
 
@@ -632,6 +636,19 @@ switch cmd
         twin = tpost - tpre;
         if nargout, varargout = {tpre+8.68e-05 twin}; end
         if twin>0.005, RTBoxWarn('USBoverload', twin); end
+    case 'digitalin'
+        varargout{1} = [];
+        if v<5, RTBoxWarn('notSupported', 'digitalIn', 5); return; end
+        if v<5.22 || (v>6 && v<6.12), RTBoxWarn('updateFirmware'); return; end
+        for iTry = 1:4
+          purgeRTBox(info(id));
+          serIO('Write', s, uint8(8));
+          b = serIO('Read', s, 2);
+          if numel(b)==2 && b(1)==8, break; end
+          if iTry==4, RTBoxError('notRespond'); end
+        end
+        varargout{1} = uint8(b(2));
+        if ~isempty(in2) && in2, varargout{1} = 255 - varargout{1}; end
     case 'clear'
         if isempty(in2), in2 = 9; end % # of sync
         if in2>0
@@ -650,6 +667,7 @@ switch cmd
         varargout{1} = syncClocks(info(id), in2);
     case 'waittr' % wait for scanner TR, for v3.0 or later
         enableByte(info(id), 16); % enable only TR
+        clnObj = onCleanup(@()enableByte(info(id))); % restore
         tr = info(id).events{11};
         while 1
             if serIO('BytesAvailable', s) >= 7
@@ -661,12 +679,11 @@ switch cmd
                 end
                 break;
             end
-            [key, t] = ReadKey({tr 'esc'}); % check key press
-            if ~isempty(key), break; end
-            WaitSecs('YieldSecs', info(id).latencyTimer);
+            t = KbEventClass.check(tr); % check key press
+            if ~isempty(t), break; end
+            KbEventClass.esc_exit(); 
+            WaitSecs('YieldSecs', 0.01);
         end
-        enableByte(info(id)); % restore events
-        if any(strcmp(key, 'esc')), error('User Pressed ESC. Exiting.'); end
         if nargout, varargout{1} = t; end
     case read % 4 trigger events, plus 'secs' 'boxsecs'
         tnow = GetSecs;
@@ -690,8 +707,7 @@ switch cmd
             nB1 = serIO('BytesAvailable', s);
             isReading = nB1>nB; % wait if reading
             nB = nB1;
-            [key, tnow] = ReadKey('esc');
-            if ~isempty(key), RTBoxError('escPressed'); end
+            tnow = KbEventClass.esc_exit();
         end
         nEvent = floor(nB/7);
         if nEvent<nEventsRead, return; end  % return if not enough events
@@ -832,7 +848,7 @@ switch cmd
             t = zeros(10, 3);
             for i = 1:10
                 t(i,:) = syncClocks(info(id), 10); % update, less trial
-                WaitTill(t0+interval*i, 'esc', 0); % disable esc exit
+                KbEventClass.wait(t0+interval*i);
                 fprintf('\b\b\b\b%4d', nTrial-i);
             end
             info(id).clkRatio = 1 + linearfit(t(:,1:2)); % update ratio
@@ -841,7 +857,7 @@ switch cmd
         t = zeros(nTrial-i0, 3); t0 = GetSecs;
         for i = 1:nTrial-i0
             t(i,:) = syncClocks(info(id), 40); % update info.sync
-            WaitTill(t0+interval*i, 'esc', 0);
+            KbEventClass.wait(t0+interval*i);
             fprintf('\b\b\b\b%4d', nTrial-i-i0);
         end
         fprintf('\n');
@@ -1012,7 +1028,7 @@ switch cmd
         t0 = GetSecs - info(id).sync(1);
         fprintf(' Waiting for events. Press ESC to stop.\n');
         fprintf('%9s%9s-%.4f\n', 'Event', 'secs', t0);
-        while isempty(ReadKey('esc'))
+        while isempty(KbEventClass.check('esc'))
             WaitSecs('YieldSecs', 0.02);
             if serIO('BytesAvailable', s)<7, continue; end
             [t, event] = RTBox('boxsecs', 0, boxID);
@@ -1073,7 +1089,7 @@ switch cmd
     case 'closeall' % close all devices
         info = []; % invoke closeRTBox
     case 'keynames'
-        varargout{1} = ReadKey('keynames');
+        varargout{1} = unique(KbEventClass.getName('KeyNames'));
     otherwise
        error('Unknown command or trigger: ''%s''.',  in1);
 end
@@ -1151,7 +1167,7 @@ s = info.handle;
 n = serIO('BytesAvailable', s);
 tout = GetSecs+1; % if longer than 1s, something is wrong
 while 1
-    WaitSecs('YieldSecs', info.latencyTimer+0.001); % allow buffer update
+    WaitSecs(info.latencyTimer+0.001); % allow buffer update
     n1 = serIO('BytesAvailable', s);
     if n1==n, break; end % not receiving
     if GetSecs>tout, RTBoxError('notRespond'); end
@@ -1319,74 +1335,48 @@ function [slope, se] = linearfit(t)
 t = bsxfun(@minus, t, mean(t));
 [slope, se] = lscov(t(:,2), t(:,1));
 
-%% This calls WaitTill to read keyboard
+%% This calls KbEventClass to read keyboard
 function [info, varargout] = RTBoxFake(cmd, info, in2)
+persistent kb
 keys = unique(info.events(1:4));
+if isempty(kb), kb = KbEventClass(keys); end
 switch cmd
     case 'eventsavailable'
-        varargout{1} = numel(ReadKey(keys));
-    case 'buttondown'
+        n = PsychHID('KbQueueFlush', kb.deviceIndex, 0);
+        if ~all(info.enabled(1:2)), n = n/2; end % guess press/release half/half
+        varargout{1} = n;
+    case 'buttondown' % useless for fake release like fORP
         if isempty(in2), in2 = info.events(1:4); end
-        key = cellstr(ReadKey(in2));
-        down = zeros(1, numel(in2));
-        for i = 1:numel(key)
-            if isempty(key{i}), break; end
-            down(strncmp(key{i}, in2, numel(key{i})))=1;
-        end
-        varargout{1} = down;
+        [~, ~, ~, p2, r2] = PsychHID('KbQueueCheck', kb.deviceIndex);
+        p2 = kb.getName(p2);
+        r2 = kb.getName(r2);
+        p2 = p2(~ismember(p2, r2));
+        varargout{1} = ismember(in2, p2);
     case {'secs' 'boxsecs'}
         if isempty(in2), in2 = 0.1; end
-        if info.untilTimeout, tout = in2;
-        else, tout = GetSecs+in2;
-        end
-        k = {}; t = [];
-        nEvents = info.nEventsRead;
-        while 1
-            [kk, tt] = ReadKey(keys);
-            if ~isempty(kk)
-                kk = cellstr(kk); n = numel(kk);
-                k(end+(1:n)) = kk; t(end+(1:n)) = tt; %#ok
-                if numel(k)>=nEvents, break; end
-                KbReleaseWait; % avoid detecting the same key
-            end
-            if tt>tout, break; end
-        end
-        if isempty(k), t = []; k = '';
-        elseif numel(k)==1, k = k{1};
-        end
+        if info.untilTimeout, in2 = in2-GetSecs; end
+        [t, k] = kb.wait(in2);
+        if isempty(t), k = ''; elseif numel(t)==1, k = k{1}; end
         varargout = {t k};
     case [info.events([9 10 12]) 'tr'] % 4 trigger
         if isempty(in2), in2 = 0.1; end
-        t0 = GetSecs; % fake trigger time
-        if info.untilTimeout, tout = in2;
-        else, tout = t0+in2;
-        end
-        k = {}; t1 = [];
-        nEvents = info.nEventsRead-1;
-        if isempty(nEvents), nEvents = 1; end
-        while GetSecs<tout
-            [kk, tt] = WaitTill(GetSecs+0.01, keys);
-            if ~isempty(kk)
-                kk = cellstr(kk); n = numel(kk);
-                k(end+(1:n)) = kk; t1(end+(1:n)) = tt; %#ok
-                if numel(k) >= nEvents, break; end
-                KbReleaseWait; % avoid detecting the same key
-            end
-        end
-        if isempty(k), t = []; else, t = t1-t0; end
+        if info.untilTimeout, in2 = in2-GetSecs; end
+        [t, k] = kb.wait(in2, keys);
+        if isempty(t), k = ''; elseif numel(t)==1, k = k{1}; end
         varargout = {t k};
     case 'waittr'
-        [~, varargout{1}] = WaitTill(info.events{11});
+        varargout{1} = kb.wait(info.events{11});
     case {'start' 'ttl'}
         if nargout>1, varargout = {GetSecs 0}; end
     case {'debounceinterval' 'ttlwidth' 'neventsread' 'untiltimeout' 'ttlresting'}
         params = {'debounceInterval' 'TTLWidth' 'nEventsRead' 'untilTimeout' 'TTLresting'};
-        ind = strcmpi(cmd,params);
+        ind = strcmpi(cmd, params);
         oldVal = info.(params{ind});
         if isempty(in2), varargout{1} = oldVal; return; end
         info.(params{ind}) = in2;
         if nargout>1, varargout{1} = oldVal; end
     case 'clear'
+        kb.clear();
         if nargout>1, varargout{1} = [0 GetSecs 0 0]; end
     case 'buttonnames'
         varargout{1} = info.events(1:4);
@@ -1402,25 +1392,24 @@ switch cmd
             varargout{1} = 'press';
         end
     case {'close' 'closeall'}
-        clear RTBox;
+        clear RTBox kb;
     case 'fake'
         info.fake = in2;
     case 'keynames'
-        varargout{1} = ReadKey('keynames');
+        varargout{1} = unique(kb.getName('KeyNames'));
     case 'test'
         t0 = GetSecs;
         fprintf(' Waiting for events. Press ESC to stop.\n');
-        fprintf('%9s%9s-%.4f\n','Event','secs',t0);
+        fprintf('%9s%9s-%.4f\n', 'Event', 'secs', t0);
         while 1
-            [event, t] = ReadKey({info.events{1:4} 'esc'});
-            if isempty(event)
-                WaitSecs('YieldSecs', 0.005);
-            elseif strcmp(event,'esc')
-                break;
-            else
-                fprintf('%9s%12.4f\n', event, t-t0);
-                KbReleaseWait;
+            try [t, k] = kb.wait(keys);
+            catch me
+                if strncmpi(me.message, 'User pressed ESC', 16), break;
+                else, rethrow(me);
+                end
             end
+            for i = 1:numel(t), fprintf('%9s%12.4f\n', k{i}, t(i)-t0); end
+            KbReleaseWait;
         end
     case 'info'
         disp(info)
