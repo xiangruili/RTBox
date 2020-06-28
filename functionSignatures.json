@@ -3,7 +3,7 @@
 {
     "inputs":
         [
-            {"name":"cmd", "kind":"optional", "type":"choices={'clear','ButtonNames','TRKey','ClockRatio','ClockDiff','secs','nEventsRead','EventsAvailable','UntilTimeout','BoxSecs','light','sound','DebounceInterval','enable','disable','EnableState','ButtonDown','TTL','TTLWidth','TTLResting','WaitTR','BufferSize','threshold','test','info','reset','KeyNames','fake','close'}"}
+            {"name":"cmd", "kind":"optional", "type":"choices={'clear','ButtonNames','digitalIn','TRKey','ClockRatio','ClockDiff','secs','nEventsRead','EventsAvailable','UntilTimeout','BoxSecs','light','sound','DebounceInterval','enable','disable','EnableState','ButtonDown','TTL','TTLWidth','TTLResting','WaitTR','BufferSize','threshold','test','info','reset','KeyNames','fake','close'}"}
         ]
 },
 
