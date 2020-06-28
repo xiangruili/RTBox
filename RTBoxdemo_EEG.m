@@ -87,7 +87,7 @@ for i = 1:nTrials
     Screen('DrawTexture', w, tex(cond), [], rect, angl); % draw to buffer
     Screen('DrawingFinished', w);
     
-    WaitTill(vbl+trialDur+rand);  % wait some time bewteen trials
+    KbEventClass.wait(vbl+trialDur+rand); % wait some time bewteen trials
     RTBox('clear');   % clear right before stimulus onset
     vbl = Screen('Flip', w);  % show stim, return onset time
     t_onset = RTBox('TTL', cond); % mark stim onset with condition number immediately after Flip
@@ -123,7 +123,7 @@ for i = 1:nTrials
     DrawFormattedText(w, str, 'center', ycenter, 0);
     Screen('Flip', w);
 end
-WaitTill(vbl+trialDur);
+KbEventClass.wait(vbl+trialDur);
 Priority(0);      % restore normal priority
 
 % save myresult record t0 randSeed;  % save a MAT file
