@@ -38,7 +38,7 @@ fprintf(' t0 = %.4f\n', t0);
 fprintf(' Trial EventCode SentTime(GetSecs-t0) UpperBound\n');
    
 for i = 1:nTrials
-    WaitTill(startt(i));
+    KbEventClass.wait(startt(i));
     % prepare your stimulus
     % show your stimulus at scheduled time, and followed by TTL
     [t_onset, ub] = RTBox('TTL', conTypes(i)); % send condition type to eye tracker
