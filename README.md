@@ -1,4 +1,4 @@
-# RTBox (version 20120.04.08)
+# RTBox (version 2020.06.16)
 RTBox driver code in Matlab
 
 RTBox.m is the main driver to use the device. Use following syntax for help of a command:
