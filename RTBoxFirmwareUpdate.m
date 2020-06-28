@@ -34,45 +34,17 @@ end
 
 more off;
 fprintf(' Checking HEX file ...');
-fid = fopen(hexFileName);
-hex = textscan(fid, '%s'); % read all
-fclose(fid);
-hex = hex{1};
-nLine = numel(hex);
-
-for i = 1:nLine
-    ln = sscanf(hex{i}(2:end), '%2x'); % get a line in hex
-    if ln(4)==0, break; end % first data line
-end
-i0 = ln(2)*256 + ln(3);
-strtAddr = ln(2:3)';
-
-for i = nLine : -1 : 1
-    ln = sscanf(hex{i}(2:end), '%2x'); % get a line in hex
-    if ln(4)==0, break; end % last data line
-end
-nByte = ln(1) + ln(2)*256 + ln(3) - i0; % max bytes of hex
-bytePL = 16; % bytes of each write
-
-nPage = ceil(nByte/bytePL); % # of writes
-C = 255 * ones(nPage * bytePL, 1, 'uint8'); % initialize with 0xff
-for i = 1:nLine
-    ln = sscanf(hex{i}(2:end), '%2x'); % get a line in hex
-    if ln(4), continue; end % not data line, skip
-    chksum = mod(-sum(ln(1:end-1)), 256);
-    if chksum ~= ln(end)
-        error('Checksum error at line %g. HEX file corrupted.', i);
-    end
-    i1 = ln(2)*256 + ln(3) - i0; % start address for the line
-    C(i1 + (1:ln(1))) = ln(5:end-1); % data
-end
-C = reshape(C, bytePL, nPage)';
+[b, startAddr] = read_intel_hex(hexFileName);
 fprintf(' Done\n');
+ch = char(b);
+nByte = numel(b);
+bytePL = 16; % bytes of each write
+nWrite = ceil(nByte/bytePL); % # of writes
+b(nByte+1:nWrite*bytePL) = 255;
+b = reshape(b, bytePL, nWrite)';
 
-hex = char(C)';
-hex = hex(:)';
-ind = strfind(hex, 'USTCRTBOX');
-v = str2double(hex(ind+(18:20)));
+ind = strfind(ch, 'USTCRTBOX');
+v = str2double(ch(ind+(18:20)));
 if v>10, v = v/100; end
 
 % check connected RTBox
@@ -92,10 +64,16 @@ if isempty(port)
             fprintf(' Plugged port detected.\n');
             break;
         end
-        if ReadKey('esc'), error('User pressed ESC. Exiting ...'); end
+        KbEventClass.esc_exit();
     end
-    port = setdiff(portsNew, ports); % new-plugged port
-    s = serIO('Open', port{1});
+    if isnumeric(portsNew{1})
+        portsNew = [portsNew{:}]; ports = [ports{:}];
+        port = setdiff(portsNew, ports); % new-plugged port
+    else
+        port = setdiff(portsNew, ports); port = port{1};
+    end
+    pause(0.5);
+    s = serIO('Open', port);
     serIO('Write', s, 'S'); % ask 'AVRBOOT'
 elseif numel(port)==1 % one RTBox
     s = serIO('Open', port{1});
@@ -128,27 +106,27 @@ serIO('Write', s, 'e'); % erase
 checkerr(s, 'erase flash');
 fprintf(' Done\n');
 
-serIO('Write', s, uint8(['A' strtAddr])); % normally 0x0000
+serIO('Write', s, uint8(['A' startAddr])); % normally 0x0000
 checkerr(s, 'set address');
 
 fprintf(' Writing flash ...');
 cmd = uint8(['B' 0 bytePL 'F']); % cmd high/low bytes, Flash
-for i = 1:nPage
+for i = 1:nWrite
     serIO('Write', s, cmd);
-    serIO('Write', s, C(i,:)); % write a page
+    serIO('Write', s, b(i,:)); % write a page
     checkerr(s, sprintf('write flash page %g', i));
 end
 fprintf(' Done\n');
 
-serIO('Write', s, uint8(['A' strtAddr])); % set start address to verify
+serIO('Write', s, uint8(['A' startAddr])); % set start address to verify
 checkerr(s, 'set address');
 
 fprintf(' Verifying flash ...');
 cmd = uint8(['g' 0 bytePL 'F']); % cmd high/low bytes, Flash
-for i = 1:nPage
+for i = 1:nWrite
     serIO('Write', s, cmd);
     ln = serIO('Read', s, bytePL); % read a page back
-    if numel(ln)<bytePL || ~all(ln==C(i,:))
+    if numel(ln)<bytePL || ~isequal(ln, b(i,:))
         cleanup(s, sprintf('Failed to verify page %g. Please try again.',i));
     end
 end
@@ -165,4 +143,40 @@ function checkerr(s, str)
 back = serIO('Read', s, 1); % read '\r'
 if isempty(back) || back~=13
     cleanup(s, sprintf('\n Failed to %s.', str));
+end
+
+%% Read intel hex file, return bytes and startAddress.
+% If address are not continuous, 0xff will fill the gap.
+% intel HEX format:
+% :10010000214601360121470136007EFE09D2190140
+% Start code(:), Byte count(1 byte), Address(2 bytes), Record type(1 byte),
+%   Data (bytes determined by Byte count), Checksum(1 byte).
+% Record type (00, data record; 01, End Of File record)
+function [bytes, startAddr] = read_intel_hex(hexFileName)
+hex = regexp(fileread(hexFileName), ':([0-9A-F]{1,})\s+', 'tokens');
+nLine = length(hex);
+
+for i = 1:nLine
+    ln = sscanf(hex{i}{1}, '%2x'); % get a line in hex
+    if ln(4)==0, break; end % 0 mean first data line
+end
+startAddr = ln(2:3)'; % normally 0 for application
+i0 = ln(2)*256 + ln(3); % normally 0 for application
+
+for i = nLine : -1 : 1
+    ln = sscanf(hex{i}{1}, '%2x'); % get a line in hex
+    if ln(4)==0, break; end % last data line
+end
+nByte = ln(1) + ln(2)*256 + ln(3) - i0; % max bytes of hex file
+
+bytes = repmat(uint8(255), 1, nByte); % initialize with 0xff
+for i = 1:nLine
+    ln = sscanf(hex{i}{1}, '%2x'); % get a line in hex
+    if ln(4), continue; end % not data line, skip
+    chksum = mod(-sum(ln(1:end-1)), 256);
+    if chksum ~= ln(end)
+        error('Checksum error at line %g. HEX file corrupted.', i);
+    end
+    i1 = ln(2)*256 + ln(3) - i0; % start index for this line
+    bytes(i1 + (1:ln(1))) = ln(5:end-1); % data
 end
