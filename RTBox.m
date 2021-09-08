@@ -934,7 +934,6 @@ switch cmd
         if nargout, varargout{1} = info(id).TTLresting; end
         if v<3.1, RTBoxWarn('notSupported', in1, 3.1); return; end
         if isempty(in2), in2 = logical([0 1]); end
-        info(id).TTLresting = in2;
         if v >= 4.4
             if numel(in2)>2, in2 = in2(1:2);
             elseif numel(in2)<2, in2(2) = info(id).TTLresting(2);
@@ -947,6 +946,7 @@ switch cmd
             b8(3) = in2(1)*240; % '11110000'
             set8bytes(s, b8);
         end
+        info(id).TTLresting = in2;
     case 'reset'
         if v<1.4
             RTBoxWarn('notSupported', in1, 1.4); 
