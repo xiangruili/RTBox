@@ -33,5 +33,6 @@ mkdir -p $LIBDIR && cp $FTD2XX $LIBDIR
 FTD2XX=$LIBDIR${FTD2XX:5}
 chmod 0755 $FTD2XX
 ln -sf $FTD2XX $LIBDIR/$LNK
+if [[ "$OSTYPE" == "linux"* ]]; then ldconfig $LIBDIR $LNK; fi
 
 echo "Please reboot to make change effect"
