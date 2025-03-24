@@ -54,6 +54,7 @@ if isempty(dashes), disp(str); return; end % Show all help text
 prgrfs = regexp(str, '(\n\s*){2,}'); % blank lines
 nTopic = numel(dashes);
 topics = ones(1, nTopic+1);
+mfile = char(mfile);
 for i = 1:nTopic
     ind = regexpi(str(1:dashes(i)), [mfile '\s*\(']); % syntax before ' - '
     if isempty(ind), continue; end % no syntax before ' - ', assume start with 1

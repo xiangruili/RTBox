@@ -14,8 +14,8 @@ function varargout = RTBoxADC (cmd, varargin)
 % the DB-25 pins 5~8, default 8. For hardware v5 and later, it can be 1~8, where
 % 1~7 correspond to the DA-15 pins 1~7, and 8 is reserved to light sensor.
 %
-% The input 'dif' means differential signal. The input pins are DB25 8
-% (positive) and 7 (negative) for v5.x. For v3.x and v4.x, these pins are not
+% The input 'dif' means differential signal. The input pins are DB25 2
+% (positive) and 1 (negative) for v5.x. For v3.x and v4.x, these pins are not
 % connected to DB25 port. The 3rd input is the gain, which can be 1, 10 or 200.
 %
 % realRate = RTBoxADC('rate', 3600);
@@ -107,8 +107,10 @@ switch lower(cmd)
     case 'timerread'
         bytes = [bytes serIO('Read', s)];
     case 'read'
+        stop(tObj);
         n = round(dur*rate/4)*4 * byteRatio;
         if numel(bytes)<n
+            WaitSecs(0.05);
             bytes = [bytes serIO('Read', s, n-numel(bytes))];
         end
         
@@ -123,15 +125,14 @@ switch lower(cmd)
             plot(t, v);
             xlabel('Time (s)'); ylabel('Voltage (V)');
         end
-        stop(tObj);
     case 'channel'
         if nargin<2, varargout{1} = ch; return; end
         ch = varargin{1};
         if ischar(ch) % differential
-            % ADMUX Channels  Gain
-            % 16    ADC0-ADC1 1
-            %  9    ADC1-ADC0 10
-            % 11    ADC1-ADC0 200
+            % ADMUX   Channels  Gain
+            % 0b01000 ADC0-ADC1 1
+            % 0b01001 ADC1-ADC0 10
+            % 0b01011 ADC1-ADC0 200
             isdif = 1;
             if nargin<3
                 gain = -1; ch1 = 16; % make gain=-1, so it is ADC1-ADC0
@@ -278,7 +279,7 @@ switch lower(cmd)
                     else, nCh = ch;
                     end
                     if ver<5, chStr = '1|2|3|4|5|6|7|8|2-1 x1|2-1 x10|2-1 x200';
-                    else, chStr = '1|2|3|4|5|6|7|8|7-8 x1|7-8 x10|7-8 x200';
+                    else, chStr = '1|2|3|4|5|6|7|8|1-2 x1|1-2 x10|1-2 x200';
                     end
                     osc.ch = uicontrol('Style', 'popupmenu', 'Value', nCh,...
                         'String', chStr, ...
@@ -314,16 +315,15 @@ end
 
 % convert data from bytes to voltage
 function vol = byte2vol(byte, byteRatio, isdif, gain, vref)
-if byteRatio == 1.25
-    np = numel(byte)/5;
-    byte = reshape(byte(:), [5 np]);
-    vol = bitand(ones(4,1)*byte(5,:), [3 12 48 192]'*ones(1,np));
-    vol = bitshift(vol, -[0 2 4 6]'*ones(1,np));
-    vol = vol*256 + byte(1:4, :);
+if byteRatio<2 % 1.25
+    byte = reshape(byte(:), 5, []);
+    vol = bitand(byte(5,:), [3 12 48 192]') .* [256 64 16 4]';
+    vol = vol + byte(1:4, :);
     vol = vol(:);
 else
-    vol = reshape(byte(:),[2 numel(byte)/2]);
-    vol = vol'*[1 256]';
+    vol = reshape(byte(:), 2, []);
+    vol = [1 256] * vol;
+    vol = vol(:);
 end
 if isdif
     vol(vol>511) = vol(vol>511)-1024;

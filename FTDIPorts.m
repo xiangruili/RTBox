@@ -160,7 +160,7 @@ else, out = ports; % ask for ports
 end
 %%
 
-function [val, errmsg] = LatencyTimer(port, msecs) %#ok
+function [val, errmsg] = LatencyTimer(port, msecs)
 % Query/change FTDI USB-serial port latency timer. 
 %  lat = LatencyTimer(port); % query only 
 %  val = LatencyTimer(port, msecs); % query and set to msecs if val>msecs

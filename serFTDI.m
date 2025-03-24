@@ -3,9 +3,11 @@ function out = serFTDI(cmd, h, param) %#ok
 % 
 % This works like IOPort from PTB, while it uses the ftd2xx driver. The
 % advantages include fast and convenient port mapping and LatencyTimer control.
-% The write function has better timing than Windows WriteFile(). The
-% inconvenience is that the driver is exclusive with VCP driver under Linux. For
-% now, to use this driver, one must unload or blacklist VCP driver under Linux.
+% The write function has better timing than Windows WriteFile(). 
+% 
+% The inconvenience comes mainly for Linux, since the driver is exclusive with
+% VCP driver. For now, to use this driver, one must unload or blacklist VCP
+% driver under Linux:
 % 
 % Under Linux, VCP driver can be unloaded temporarily by:
 %  sudo rmmod ftdi_sio
@@ -19,10 +21,6 @@ function out = serFTDI(cmd, h, param) %#ok
 % with the following content needs to be created with sudo:
 %  SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", MODE="0666"
 % 
-% Under OSX, a simple solution is to download and install the D2xxHelper to
-% prevent the OS from locking out D2XX driver:
-%  https://www.ftdichip.com/Drivers/D2XX/MacOSX/D2xxHelper_v2.0.0.pkg
-% 
 % The following commands are available for serFTDI.
 % 
 % nPorts = serFTDI('NumberOfPorts') 
@@ -31,18 +29,18 @@ function out = serFTDI(cmd, h, param) %#ok
 % haveAccess = serFTDI('Accessible') 
 % - Check if serFTDI can access the ports. This returns true if there is no
 % port, otherwise it tries if the driver can open a port. If it returns false,
-% it is likely due to VCP driver is present under OSX/Linux.
+% it is likely due to VCP driver is present under Linux.
 % 
 % [h, errmsg] = serFTDI('Open', index, cfgStr)
 % - Open a serial port, and return the handle (h=index) which will be used by
 % other serFTDI commands. The input index can be 0 through nPorts-1. If the
 % second output, errmsg, is requested, the Open command won't throw error even
-% if it fails to open a port. Instead it will return -1 as invalid handle, and 
-% store error message in the errmsg. The errmsg will be empty with success.
+% if it fails to open a port. Instead it returns -1 as invalid handle, and
+% stores error message in errmsg (empty if success).
 % 
 % The optional input cfgStr is in format of 
 % 'BaudRate=115200 ReceiveTimeout=0.3 LatencyTimer=0.002'. 
-% The default for other parameters are 
+% Those are default parameters. The default for other parameters are 
 % 'DataBits=8 StopBits=1 FlowControl=None Parity=None SendTimeout=0.3'.
 % Invalid or unsupported parameters will be ignored silently.
 % 

@@ -33,7 +33,7 @@ classdef KbEventClass < handle
   % Several static methods can be used with/without constructing the class
   % object. They use KbCheck(-1), so read keys from all connected keyboards:
   %  t = KbEventClass.check('esc'); % check if ESC is down NOW at any keyboard
-  %  [t, key] = KbEventClass.wait({'a' 'b'}); % wait a/b keys press any keyboard
+  %  [t, key] = KbEventClass.wait({'a' 'b'}); % wait a/b keypress from any keyboard
   %  KbEventClass.esc_exit(); % error out if ESC is down from any keyboard
   % If object is constructed with kb = KbEventClass(), it can also be used as:
   %  [t, key] = kb.check({'left' 'right'}); % work like PTB KbCheck(-1)
@@ -218,7 +218,7 @@ classdef KbEventClass < handle
         product = {d.product};
         if numel(kbs)<2, idx = kbs; return; end % no choice, e.g. ispc
         if nargin<1 || isempty(pName)
-            pName = {'932' 'fORP Interface' 'HIDKeys' 'Virtual'};
+            pName = {'904' '932' 'fORP Interface' 'HIDKeys' 'Virtual'};
         elseif ischar(pName)
             pName = cellstr(pName);
         end
