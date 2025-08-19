@@ -45,7 +45,7 @@ for i = nFrames
     WaitSecs(dur-(t1-t0)+0.01); % wait till ADC done 
 
     RTBoxADC('read'); % read and show the result
-    if i==nFrames(1), hold all; end % append later plots to figure
+    if i==nFrames(1), hold on; end % append later plots to figure
 end
 
 legend(cellstr(num2str(nFrames(:))));
