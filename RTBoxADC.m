@@ -14,14 +14,14 @@ function varargout = RTBoxADC (cmd, varargin)
 % the DB-25 pins 5~8, default 8. For hardware v5 and later, it can be 1~8, where
 % 1~7 correspond to the DA-15 pins 1~7, and 8 is reserved to light sensor.
 %
-% The input 'dif' means differential signal. The input pins are DB25 2
+% The input 'dif' means differential signal. The input pins are DA15 port 2
 % (positive) and 1 (negative) for v5.x. For v3.x and v4.x, these pins are not
 % connected to DB25 port. The 3rd input is the gain, which can be 1, 10 or 200.
 %
-% realRate = RTBoxADC('rate', 3600);
-% - Set sampling rate. Currently, only several rates are acceptable: 3600, 900,
-% 450, 225, 112.5 and 28.125 Hz. If other rate is asked, the closest rate will
-% be used. The real rate will be returned if output is provided.
+% realRate = RTBoxADC('rate', 3600); - Set sampling rate. Currently, only
+% several rates are acceptable: 3600, 900, 450, 225, 112.5 and 28.125 Hz. If
+% other rate is requested, the closest rate will be used. The real rate will be
+% returned if output is provided.
 %
 % RTBoxADC('duration', 0.1);
 % - Set duration in seconds for acquisition.
