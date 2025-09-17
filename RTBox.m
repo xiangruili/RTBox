@@ -490,7 +490,7 @@ if isempty(infoDft) % no any opened device
         'TTLresting', logical([0 1]), 'clockUnit', 1/115200, 'cleanObj', [], ...
         'MAC', zeros(1,7,'uint8'), 'buffer', 585, 'threshold', 1);
     events4enable = {'press' 'release' 'sound' 'light' 'tr' 'aux'};
-    if ~exist('evalc', 'builtin'), more off; eval('evalc=@eval;'); end % Octave
+    if ~exist('evalc', 'builtin'), more off; eval('evalc=@eval;'); end %#ok Octave
     try evalc('GetSecs;KbCheck;Screen(''computer'')'); end
 end
 
@@ -580,7 +580,7 @@ if (new || isempty(s)) && ~strncmp('close', cmd, 5) % open device unless asked t
             i = strcmp(port, {S.portname});
             if any(i)
                 S = S(i);
-                dt = now*24*3600 - GetSecs;
+                dt = now*24*3600 - GetSecs; %#ok<*TNOW1>
                 tpre = serIO('Write', s, 'Y');
                 b7 = serIO('Read', s, 7);
                 td = bytes2secs(b7(2:7)', info(id), 1) - S.BoxSecs;
@@ -758,7 +758,7 @@ switch cmd
             timing = timing - trigT;   % relative to trigger time
         end
         
-        if numel(event)==1, event = event{1}; end % if only 1 event, use string
+        if isscalar(event), event = event{1}; end % if only 1 event, use string
         varargout = {timing, event};
     case 'purge' % this may be removed in the future. Use RTBox('clear',0)
         if any(info(id).enabled(3:6))
@@ -1052,7 +1052,8 @@ switch cmd
                 [~, os] = system('cat /etc/os-release');
                 os = regexp(os, '(?<=PRETTY_NAME=").*?(?=")', 'match', 'once');
             else
-                os = regexp(os, '(?<=Description:\s*).*?(?=\n)', 'match', 'once');
+                os = regexp(os, 'Description:\s*(.*?)\n', 'tokens', 'once');
+                os = os{1};
             end
         end
 
@@ -1314,7 +1315,7 @@ str = WrapString(str);
 fprintf(2,'\n Warning: %s\n', str);
 fid = fopen('RTBoxWarningLog.txt', 'a'); 
 if fid<0, return; end
-fprintf(fid, '%s\n%s\n\n', datestr(now), str); % write warning into log file
+fprintf(fid, '%s\n%s\n\n', datestr(now), str); %#ok<*DATST> write warning into log file
 fclose(fid);
 
 %% return str from cellstr for printing, also remove port path
@@ -1356,13 +1357,13 @@ switch cmd
         if isempty(in2), in2 = 0.1; end
         if info.untilTimeout, in2 = in2-GetSecs; end
         [t, k] = kb.wait(in2);
-        if isempty(t), k = ''; elseif numel(t)==1, k = k{1}; end
+        if isempty(t), k = ''; elseif isscalar(t), k = k{1}; end
         varargout = {t k};
     case [info.events([9 10 12]) 'tr'] % 4 trigger
         if isempty(in2), in2 = 0.1; end
         if info.untilTimeout, in2 = in2-GetSecs; end
         [t, k] = kb.wait(in2, keys);
-        if isempty(t), k = ''; elseif numel(t)==1, k = k{1}; end
+        if isempty(t), k = ''; elseif isscalar(t), k = k{1}; end
         varargout = {t k};
     case 'waittr'
         varargout{1} = kb.wait(info.events{11});
