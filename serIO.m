@@ -13,7 +13,7 @@ function varargout = serIO(cmd, varargin)
 % 171008 Write it (Xiangrui.Li at gmail.com)
 % 180902 fix for 64-bit Octave
 
-persistent use_serFTDI clnObj; %#ok
+persistent use_serFTDI clnObj;
 if isempty(use_serFTDI)
     if exist('OCTAVE_VERSION', 'builtin')
         try
